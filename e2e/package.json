@@ -1,0 +1,12 @@
+{
+  "name": "e2e",
+  "private": true,
+  "description": "Outside-in end-user scenarios for this surface",
+  "scripts": {
+    "test": "playwright test",
+    "trace": "playwright show-trace"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}

@@ -1,0 +1,7 @@
+# Pointer only. This repository carries no memory of its own.
+# Durable memory lives in the team store bound below (a sibling checkout).
+stores:
+  - name: team
+    path: ../ai-news-team-context
+    priority: 10
+    writable: true
