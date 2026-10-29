@@ -21,8 +21,8 @@ export default defineConfig({
   projects: [
     // Phone-sized check: screen size, touch and the Safari engine family.
     // It is an emulation, not the device.
-    { name: 'iphone', grepInvert: /@surface-api/, use: { ...devices['iPhone 15'] } },
+    { name: 'iphone', grepInvert: /@surface-api|@surface-job|@surface-data/, use: { ...devices['iPhone 15'] } },
     // Scenarios for a published interface need no browser: tag them @surface-api.
-    { name: 'api', grep: /@surface-api/, use: {} },
+    { name: 'api', grep: /@surface-api|@surface-job|@surface-data/, use: {} },
   ],
 });
