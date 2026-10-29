@@ -2,7 +2,7 @@
 name: Story (agent-ready)
 about: A story a person can agree to and an agent can build without guessing
 title: "<Verb-first title stating the outcome>"
-labels: story
+labels: type-story
 ---
 
 **Parent epic:** #<epic number and title>

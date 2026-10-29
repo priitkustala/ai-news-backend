@@ -2,7 +2,7 @@
 name: Bug (machine-followable)
 about: A bug report an agent can act on; all five mandatory fields before Ready
 title: "<Wrong behavior in product language>"
-labels: bug
+labels: type-bug
 ---
 
 **Environment:** <test / production>; <surface>; <build/release>
