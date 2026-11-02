@@ -13,6 +13,21 @@ PENDING rows are filled by the environment bootstrap story (#40, priitkustala/ai
 | Seed synthetic data | PENDING: #40 fills it | |
 | Development-only sign-in | PENDING: #40 fills it | |
 
+## Variables the scenarios read
+
+`node dist/cli.js keys` (run once in the backend box, from the repository root) writes them into the
+git-ignored `.env.local` at the repository root; `e2e/playwright.config.ts` loads that file, and a
+value already set in the environment wins (priitkustala/ai-news#40).
+
+| Name | Value |
+|---|---|
+| `E2E_DATA_URL` | `http://ai-news-api:8000/rest/v1` (the local Supabase interface's Data API, through the gateway) |
+| `E2E_PUBLISHABLE_KEY` | the local publishable key: the value `node dist/cli.js keys` wrote into `.env.local` (never the hosted project's, never committed) |
+| `E2E_BACKEND_COMMAND` | `node /workspaces/ai-news-backend/dist/cli.js` (built by `npm run build`) |
+| `E2E_FIXTURE_FEED_URL` | `http://ai-news-feeds:8081/feeds/techcrunch-ai.xml` (the fixture feed server) |
+| `E2E_OD08` | `undecided` (OD-08 is open) |
+| `E2E_RUN_TIME_ZONE` | `UTC` (a test variable; OD-09 stays open) |
+
 ## Run
 
 ```

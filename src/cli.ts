@@ -3,6 +3,7 @@
 // Each subcommand prints its named output as one JSON object on the last line of standard
 // output (tests/README-testids.md, Named commands and outputs); messages go to standard error.
 import { loadLocalEnv, UsageError } from './env.js';
+import { generateKeys } from './keys.js';
 
 const USAGE = `Usage: node dist/cli.js <command> [arguments]
 
@@ -10,8 +11,12 @@ Commands of the job and the local test environment:
   ingest <run-date> [--dry-run]     run the ingestion job for a date (YYYY-MM-DD); --dry-run writes nothing
   seed <fixture-set> <run-marker>   reset the local database to the base seed plus a fixture set
   sign-in <persona>                 development sign-in of a seeded persona; prints its access token
+
+Set-up of the local test environment:
+  keys                              generate this stack's local keys into the git-ignored .env files (once)
 `;
 
+const print = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
 const log = (line: string) => process.stderr.write(`${line}\n`);
 
 class NotYetBuiltError extends Error {}
@@ -28,6 +33,12 @@ async function main(argv: string[]): Promise<void> {
     case 'seed':
     case 'sign-in':
       throw new NotYetBuiltError(`${command} is not built yet (priitkustala/ai-news#40).`);
+    case 'keys': {
+      const result = generateKeys();
+      log(result.written.length > 0 ? `keys: wrote ${result.written.join(', ')}` : `keys: kept the existing ${result.kept.join(', ')}`);
+      print(result);
+      return;
+    }
     default:
       throw new UsageError(`Unknown command ${command}.\n${USAGE}`);
   }

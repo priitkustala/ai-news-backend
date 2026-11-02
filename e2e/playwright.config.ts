@@ -1,4 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
+
+// The local test environment's bindings (priitkustala/ai-news#40): `node dist/cli.js keys`
+// writes them into the git-ignored ../.env.local; a value already set in the environment wins.
+const localEnv = path.resolve(__dirname, '..', '.env.local');
+if (fs.existsSync(localEnv)) process.loadEnvFile(localEnv);
 
 // The address of the locally running app. The run wrapper sets E2E_BASE_URL;
 // the fallback is only for running by hand.
@@ -8,7 +15,9 @@ export default defineConfig({
   testDir: './tests',
   // A committed .only would silently shrink the suite.
   forbidOnly: true,
-  fullyParallel: true,
+  // One worker on one stack (AD-08): a seed resets shared state, so scenarios never overlap.
+  fullyParallel: false,
+  workers: 1,
   // No silent reruns: a pass after a fail is a finding. The wrapper passes --retries.
   retries: 0,
   reporter: [['line']],
