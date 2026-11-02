@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Simon Willison's Weblog (fixture)</title>
+  <link href="https://simonwillison.net/"/>
+  <id>https://simonwillison.net/ai-news-fixture/</id>
+  <updated>{{at_iso}}</updated>
+  <entry>
+    <title>{{run}} synthetic notes on an LLM tool</title>
+    <link href="https://simonwillison.net/ai-news-fixture/{{run}}"/>
+    <id>https://simonwillison.net/ai-news-fixture/{{run}}</id>
+    <updated>{{at_iso}}</updated>
+    <summary>A synthetic Atom entry.</summary>
+  </entry>
+</feed>

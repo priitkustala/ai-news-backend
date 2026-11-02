@@ -5,13 +5,28 @@ synthetic data. Run them with the shared skill `outside-in-e2e-testing`.
 
 ## Start, seed, sign in (fill these in; never guess them)
 
-PENDING rows are filled by the environment bootstrap story (#40, priitkustala/ai-news#40) with the real commands and ports; nobody guesses them (LOCKED specification, section Local test environment, SHA-256 d32043642ac985b907e6ccb80e8d1fc4868ae3c526c2453ccace6517a3dac890).
+Filled by the environment bootstrap story (priitkustala/ai-news#40) with the real commands and ports (LOCKED specification, section Local test environment, SHA-256 d32043642ac985b907e6ccb80e8d1fc4868ae3c526c2453ccace6517a3dac890). "Box" is the backend dev container at the repository root; the stack is started on the host (the box has no container engine). The full table is in `../AGENTS.md`, Build, Test, Run.
 
 | Step | Command | Address |
 |---|---|---|
-| Start the app locally | PENDING: #40 fills it | PENDING: #40 fills it |
-| Seed synthetic data | PENDING: #40 fills it | |
-| Development-only sign-in | PENDING: #40 fills it | |
+| Start the app locally | host: `docker compose -p ai-news-backend_devcontainer -f .devcontainer/docker-compose.yml -f .devcontainer/docker-compose.override.yml up -d --wait ai-news-db ai-news-auth ai-news-rest ai-news-api ai-news-feeds ai-news-commands`; then box: `node dist/cli.js migrate` | `http://ai-news-api:8000` (Data API `/rest/v1`, Supabase Auth `/auth/v1`); fixture feeds `http://ai-news-feeds:8081`; PostgreSQL `ai-news-db:5432` on the compose network only |
+| Seed synthetic data | box: `node dist/cli.js seed <fixture-set> <run-marker>` | |
+| Development-only sign-in | box: `node dist/cli.js sign-in owner` (or `second-user`); prints `{"access_token": ...}` | |
+
+## Variables the scenarios read
+
+`node dist/cli.js keys` (run once in the backend box, from the repository root) writes them into the
+git-ignored `.env.local` at the repository root; `e2e/playwright.config.ts` loads that file, and a
+value already set in the environment wins (priitkustala/ai-news#40).
+
+| Name | Value |
+|---|---|
+| `E2E_DATA_URL` | `http://ai-news-api:8000/rest/v1` (the local Supabase interface's Data API, through the gateway) |
+| `E2E_PUBLISHABLE_KEY` | the local publishable key: the value `node dist/cli.js keys` wrote into `.env.local` (never the hosted project's, never committed) |
+| `E2E_BACKEND_COMMAND` | `node /workspaces/ai-news-backend/dist/cli.js` (built by `npm run build`) |
+| `E2E_FIXTURE_FEED_URL` | `http://ai-news-feeds:8081/feeds/techcrunch-ai.xml` (the fixture feed server) |
+| `E2E_OD08` | `undecided` (OD-08 is open) |
+| `E2E_RUN_TIME_ZONE` | `UTC` (a test variable; OD-09 stays open) |
 
 ## Run
 

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed that succeeds (fixture)</title>
+    <link>https://ok.example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}} synthetic AI model news one</title><link>https://ok.example.com/ai-news-fixture/{{run}}-1</link><description>A synthetic AI item.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://ok.example.com/ai-news-fixture/{{run}}-1</guid></item>
+    <item><title>{{run}} synthetic AI model news two</title><link>https://ok.example.com/ai-news-fixture/{{run}}-2</link><description>A synthetic AI item.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://ok.example.com/ai-news-fixture/{{run}}-2</guid></item>
+  </channel>
+</rss>

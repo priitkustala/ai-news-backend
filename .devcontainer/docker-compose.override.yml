@@ -14,3 +14,164 @@ services:
       - ../../ai-news-team-context:/workspaces/ai-news-team-context:ro
       # The shared end-to-end testing skill from the host, read-only.
       - ${USERPROFILE:-${HOME}}/.agents/skills/outside-in-e2e-testing:/workspaces/.skills/outside-in-e2e-testing:ro
+
+  # The local test environment (priitkustala/ai-news#40): the seeded PostgreSQL
+  # database, the local Supabase interface (Supabase Auth and PostgREST behind the
+  # Envoy API gateway) and the fixture feed server. Every service is on the
+  # `internal` network only: no egress, no published host port. Local keys only,
+  # generated in the box by `node dist/cli.js keys` into the git-ignored
+  # ../.env.stack-* files; never the hosted project's.
+  ai-news-db:
+    image: supabase/postgres:17.11.0.003@sha256:7374d196da7e301512cc5329e18040e0f7bb856287b323777cdadecccbc6c7e4
+    restart: unless-stopped
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "log_min_messages=fatal"]
+    env_file: ../.env.stack-db
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      PGPORT: "5432"
+      POSTGRES_PORT: "5432"
+      PGDATABASE: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - ../stack/db/99-roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
+      - ai-news-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - internal
+
+  ai-news-auth:
+    image: supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b
+    restart: unless-stopped
+    depends_on:
+      ai-news-db:
+        condition: service_healthy
+    env_file: ../.env.stack-auth
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: http://ai-news-api:8000
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_SITE_URL: http://localhost:3000
+      GOTRUE_URI_ALLOW_LIST: ""
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_ISSUER: http://ai-news-api:8000/auth/v1
+      # Password sign-in, one account per persona; no self sign-up (the seed creates
+      # the personas through the admin interface); email only.
+      GOTRUE_DISABLE_SIGNUP: "true"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false"
+      GOTRUE_MAILER_AUTOCONFIRM: "false"
+      GOTRUE_SMS_AUTOCONFIRM: "false"
+      GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: "true"
+      GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION: "true"
+      GOTRUE_PASSWORD_MIN_LENGTH: "12"
+      # Local only: the scenario suite signs in about 60 times a run, above the default
+      # token limit (150 per 5 minutes, burst 30); authorisation is unchanged.
+      GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "1800"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - internal
+
+  ai-news-rest:
+    image: postgrest/postgrest:v16.4@sha256:d155c6718ed9a9f990d159a2ab7c0a3f16944dbb6d0a0344557421042acfe0df
+    restart: unless-stopped
+    depends_on:
+      ai-news-db:
+        condition: service_healthy
+    env_file: ../.env.stack-rest
+    environment:
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_EXTRA_SEARCH_PATH: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_DB_MAX_ROWS: "1000"
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_ADMIN_SERVER_PORT: "3001"
+      PGRST_ADMIN_SERVER_HOST: localhost
+    healthcheck:
+      test: ["CMD", "postgrest", "--ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - internal
+
+  ai-news-api:
+    image: envoyproxy/envoy:v1.39.2@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85
+    restart: unless-stopped
+    depends_on:
+      - ai-news-auth
+      - ai-news-rest
+    env_file: ../.env.stack-api
+    entrypoint: ["/bin/sh", "/stack/envoy/entrypoint.sh"]
+    volumes:
+      - ../stack/envoy:/stack/envoy:ro
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/127.0.0.1/8000'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      internal: {}
+      # Shared with the ai-news-frontend box, so its client and scenarios reach the
+      # gateway as http://ai-news-api:8000 (the frontend override joins it).
+      ai-news-local: {}
+
+  ai-news-feeds:
+    # The workload's own image (already pulled); Node 22's built-in HTTP module.
+    image: mcr.microsoft.com/devcontainers/typescript-node:22
+    restart: unless-stopped
+    command: ["node", "/srv/fixtures/server.mjs"]
+    environment:
+      FIXTURE_PORT: "8081"
+    volumes:
+      - ../fixtures:/srv/fixtures:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8081/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - internal
+
+  ai-news-commands:
+    # Development-only relay for the ai-news-frontend box (priitkustala/ai-news#40): its
+    # scenarios set up their Given with this checkout's `seed`, `ingest` and `sign-in`
+    # commands (E2E_BACKEND_COMMAND). Runs `node dist/cli.js <subcommand> ...` and answers
+    # the exit code and output; refuses any other subcommand. No host port.
+    image: mcr.microsoft.com/devcontainers/typescript-node:22
+    restart: unless-stopped
+    working_dir: /srv/backend
+    command: ["node", "/srv/backend/stack/commands/server.mjs"]
+    environment:
+      COMMANDS_PORT: "8090"
+    volumes:
+      - ..:/srv/backend:ro
+      - node-modules:/srv/backend/node_modules:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8090/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      internal: {}
+      ai-news-local: {}
+
+networks:
+  ai-news-local:
+    name: ai-news-local
+    internal: true
+
+volumes:
+  ai-news-db-data: {}

@@ -10,3 +10,6 @@
 
 # Dependencies are installed per machine and per container
 node_modules/
+
+# Compiled command (npm run build)
+dist/

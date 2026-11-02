@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture placeholder source (fixture)</title>
+    <link>https://placeholder.example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}} synthetic placeholder item</title><link>https://placeholder.example.com/ai-news-fixture/{{run}}</link><description>A synthetic item.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://placeholder.example.com/ai-news-fixture/{{run}}</guid></item>
+  </channel>
+</rss>

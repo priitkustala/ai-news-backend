@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE rss [
+  <!ENTITY xxe SYSTEM "http://ai-news-feeds:8081/entities/xxe.txt?run={{run}}">
+]>
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed with an external entity</title>
+    <link>https://xxe.example.com</link>
+    <description>The entity must never be expanded.</description>
+    <item><title>{{run}} synthetic AI item &xxe;</title><link>https://xxe.example.com/ai-news-fixture/{{run}}</link><description>&xxe;</description><pubDate>{{at_rfc822}}</pubDate></item>
+  </channel>
+</rss>

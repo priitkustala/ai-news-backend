@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture general news feed (fixture)</title>
+    <link>https://general.example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}}-ai a new machine learning model is released</title><link>https://general.example.com/ai-news-fixture/{{run}}-ai</link><description>An item about artificial intelligence.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://general.example.com/ai-news-fixture/{{run}}-ai</guid></item>
+    <item><title>{{run}}-general the city council approves a new park</title><link>https://general.example.com/ai-news-fixture/{{run}}-general</link><description>An item with no AI keyword.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://general.example.com/ai-news-fixture/{{run}}-general</guid></item>
+  </channel>
+</rss>

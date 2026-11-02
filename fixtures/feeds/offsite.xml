@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed linking off the feed list (fixture)</title>
+    <link>https://offsite-feed.example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}}-offsite synthetic AI item</title><link>https://offsite.invalid/ai-news-fixture/{{run}}</link><description>The link points at a host outside the configured feed list; the job must not request it.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://offsite.invalid/ai-news-fixture/{{run}}</guid></item>
+  </channel>
+</rss>

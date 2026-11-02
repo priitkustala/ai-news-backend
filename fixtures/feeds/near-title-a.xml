@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed A (fixture)</title>
+    <link>https://near-a.example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}}-near-title: Lab Releases New AI Model</title><link>https://near-a.example.com/ai-news-fixture/{{run}}</link><description>Source A.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://near-a.example.com/ai-news-fixture/{{run}}</guid></item>
+  </channel>
+</rss>

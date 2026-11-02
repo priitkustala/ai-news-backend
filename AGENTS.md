@@ -7,17 +7,35 @@ work here. Changes to this file are reviewed in a pull request like code.
 
 The backend services of ai-news: they collect AI-specific news, process it and serve it to the iPhone app. Microservices architecture (owner decision, 2026-10-02). The iPhone app is not in this repository; it lives in `ai-news-frontend`.
 
-- Language/runtime: PENDING (set in the Brief stage from the LOCKED specification)
-- Frameworks: PENDING (same)
-- Deployment: PENDING (set in the Brief stage from the LOCKED specification)
+- Language/runtime: TypeScript on Node 22 (OD-03), compiled by tsc 7.0.2
+- Frameworks: none; pg 8.23.1 for PostgreSQL
+- Deployment: the ingest command runs as a GitHub Actions scheduled workflow of this repository against Supabase (OD-01 B), built at Release and run; nothing is deployed by #40
 - Owning team: ai-news; team context: `ai-news-team-context`
 
 ## Build, Test, Run
 
-PENDING. No stack is chosen yet, so no command is listed and none may be assumed. The
-first story of the Development pillar fills this table with exact commands (install,
-build, unit tests, integration tests, end-to-end tests, lint and format, run locally,
-run one test) and the Done When list below. Until then no feature work starts here.
+Filled by the environment bootstrap story (priitkustala/ai-news#40). "Box" is this
+repository's dev container, from the repository root; "host" is Git Bash in this folder on
+the host, because the box has no container engine. `<compose>` stands for
+`docker compose -p ai-news-backend_devcontainer -f .devcontainer/docker-compose.yml -f .devcontainer/docker-compose.override.yml`.
+
+| Task | Where | Command |
+|---|---|---|
+| Install | box | `npm ci --ignore-scripts` and `cd e2e && npm ci` |
+| Build and type check | box | `npm run build` |
+| Local keys, once | box | `node dist/cli.js keys` (writes the git-ignored `.env.local` and `.env.stack-*`; never overwrites) |
+| Start the stack (priitkustala/ai-news#40) | host, Git Bash, this folder (or start the box with `sandbox`, which starts the services with the workload) | `docker compose -p ai-news-backend_devcontainer -f .devcontainer/docker-compose.yml -f .devcontainer/docker-compose.override.yml up -d --wait ai-news-db ai-news-auth ai-news-rest ai-news-api ai-news-feeds ai-news-commands` |
+| Migrate, create the personas and load the base seed | box | `node dist/cli.js migrate` (safe to run again) |
+| Stack state | host | `<compose> ps` |
+| Stop | host | `<compose> stop` |
+| Reset the database | host, then box | `<compose> rm -s -f -v ai-news-db` and `docker volume rm ai-news-backend_devcontainer_ai-news-db-data`, then the start command and `node dist/cli.js migrate` |
+| Seed a fixture set | box | `node dist/cli.js seed <fixture-set> <run-marker>` |
+| Development sign-in | box | `node dist/cli.js sign-in owner` (or `second-user`) |
+| Run the job | box | `node dist/cli.js ingest <YYYY-MM-DD> [--dry-run]` |
+| Scoped scenarios | box | `cd e2e && npx playwright test --project=api --grep "@story-40"` |
+| One scenario | box | `cd e2e && npx playwright test --project=api tests/bootstrap/40-40-a-gateway-answers.spec.ts` |
+| Unit and integration tests | - | none yet: no unit-tested module exists; the first feature story adds the runner as an approved dependency |
+| Lint and format | - | none approved yet; the type check is `npm run build` (strict) |
 
 ## Protected Areas
 
@@ -41,8 +59,11 @@ run one test) and the Done When list below. Until then no feature work starts he
 
 ## How to Verify: Done When
 
-PENDING with the Build, Test, Run table. Until it is filled, "done" cannot be claimed
-for any change other than documentation.
+- `npm run build` exits 0.
+- The scoped scenarios of the story pass, and the scoped regression
+  `--grep "@journey-<journey>"` of each touched journey shows no other change.
+- The diagnostic or before-build evidence the regression contract requires is attached
+  to the pull request.
 
 ## Starting a Session Here
 
@@ -68,8 +89,7 @@ the project folder, next to `ai-news-team-context/`.
   report by journey).
 - Scenarios are written from a story's acceptance criteria before implementation and
   must first fail on their assertion.
-- How to start, seed and sign in locally: `e2e/README.md`. PENDING until the stack is
-  chosen; nobody guesses these commands.
+- How to start, seed and sign in locally: `e2e/README.md`, section Start, seed, sign in.
 
 ## Autonomous Runs: the Sandbox
 
