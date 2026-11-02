@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture licensed source (fixture)</title>
+    <link>https://licensed.example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}} synthetic licensed item</title><link>https://licensed.example.com/ai-news-fixture/{{run}}</link><description>A synthetic item.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://licensed.example.com/ai-news-fixture/{{run}}</guid></item>
+  </channel>
+</rss>

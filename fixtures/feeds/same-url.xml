@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed with utm variants (fixture)</title>
+    <link>https://same-url.example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}}-same-url synthetic AI story</title><link>https://same-url.example.com/ai-news-fixture/{{run}}?utm_source=feed&amp;utm_medium=rss</link><description>First copy.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://same-url.example.com/ai-news-fixture/{{run}}?utm_source=feed&amp;utm_medium=rss</guid></item>
+    <item><title>{{run}}-same-url synthetic AI story (repost)</title><link>https://same-url.example.com/ai-news-fixture/{{run}}?utm_campaign=repost</link><description>Second copy; the same address without utm parameters.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://same-url.example.com/ai-news-fixture/{{run}}?utm_campaign=repost</guid></item>
+  </channel>
+</rss>

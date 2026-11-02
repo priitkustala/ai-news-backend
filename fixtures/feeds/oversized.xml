@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed with an oversized item (fixture)</title>
+    <link>https://oversized.example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>oversized-{{run}} synthetic AI item</title><link>https://oversized.example.com/ai-news-fixture/{{run}}</link><description>{{oversized}}</description><pubDate>{{at_rfc822}}</pubDate><guid>https://oversized.example.com/ai-news-fixture/{{run}}</guid></item>
+    <item><title>{{run}}-small synthetic AI item</title><link>https://oversized.example.com/ai-news-fixture/{{run}}-small</link><description>A normal item.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://oversized.example.com/ai-news-fixture/{{run}}-small</guid></item>
+  </channel>
+</rss>

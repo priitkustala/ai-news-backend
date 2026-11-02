@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed with invalid XML</title>
+    <item><title>{{run}} an unterminated item <link>https://invalid.example.com/ai-news-fixture/{{run}}</item>
+  </channel>

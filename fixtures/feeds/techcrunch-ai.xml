@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>TechCrunch AI (fixture)</title>
+    <link>https://techcrunch.com/category/artificial-intelligence/</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}} synthetic AI startup raises a round</title><link>https://techcrunch.com/ai-news-fixture/{{run}}-round</link><description>A synthetic business story.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://techcrunch.com/ai-news-fixture/{{run}}-round</guid></item>
+    <item><title>{{run}} synthetic developer tool launch</title><link>https://techcrunch.com/ai-news-fixture/{{run}}-tool</link><description>A synthetic product story.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://techcrunch.com/ai-news-fixture/{{run}}-tool</guid></item>
+  </channel>
+</rss>

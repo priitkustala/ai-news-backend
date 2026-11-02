@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>OpenAI News (fixture)</title>
+    <link>https://openai.com/news</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}} synthetic model release</title><link>https://openai.com/ai-news-fixture/{{run}}-release</link><description>A synthetic release note.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://openai.com/ai-news-fixture/{{run}}-release</guid></item>
+  </channel>
+</rss>

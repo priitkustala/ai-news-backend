@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Anthropic News (fixture)</title>
+    <link>https://www.anthropic.com/news</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}}-mirror-1 synthetic announcement</title><link>https://www.anthropic.com/news/ai-news-fixture-{{run}}-1</link><description>{{run}}-article-body The whole synthetic article one, as the mirror carries it.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://www.anthropic.com/news/ai-news-fixture-{{run}}-1</guid></item>
+    <item><title>{{run}}-mirror-2 synthetic announcement</title><link>https://www.anthropic.com/news/ai-news-fixture-{{run}}-2</link><description>{{run}}-article-body The whole synthetic article two, as the mirror carries it.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://www.anthropic.com/news/ai-news-fixture-{{run}}-2</guid></item>
+  </channel>
+</rss>

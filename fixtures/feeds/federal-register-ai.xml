@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>US Federal Register: artificial intelligence (fixture)</title>
+    <link>https://www.federalregister.gov</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}} synthetic proposed rule on AI</title><link>https://www.federalregister.gov/ai-news-fixture/{{run}}-rule</link><description>A synthetic notice.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://www.federalregister.gov/ai-news-fixture/{{run}}-rule</guid></item>
+  </channel>
+</rss>

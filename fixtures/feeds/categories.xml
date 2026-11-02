@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed for the category rules (fixture)</title>
+    <link>https://categories.example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}}-releases a lab releases a new open-weights model</title><link>https://categories.example.com/ai-news-fixture/{{run}}-releases</link><description>Model release.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://categories.example.com/ai-news-fixture/{{run}}-releases</guid></item>
+    <item><title>{{run}}-research a paper on reasoning benchmarks for AI</title><link>https://categories.example.com/ai-news-fixture/{{run}}-research</link><description>Research paper.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://categories.example.com/ai-news-fixture/{{run}}-research</guid></item>
+    <item><title>{{run}}-policy regulators publish AI Act guidance</title><link>https://categories.example.com/ai-news-fixture/{{run}}-policy</link><description>Regulation.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://categories.example.com/ai-news-fixture/{{run}}-policy</guid></item>
+    <item><title>{{run}}-business an AI developer tools startup raises funding</title><link>https://categories.example.com/ai-news-fixture/{{run}}-business</link><description>Business.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://categories.example.com/ai-news-fixture/{{run}}-business</guid></item>
+    <item><title>{{run}}-unmatched an AI system answers a question about cooking</title><link>https://categories.example.com/ai-news-fixture/{{run}}-unmatched</link><description>Matches no category rule.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://categories.example.com/ai-news-fixture/{{run}}-unmatched</guid></item>
+    <item><title>{{run}}-releases-2 a chatbot update ships to users</title><link>https://categories.example.com/ai-news-fixture/{{run}}-releases-2</link><description>Release.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://categories.example.com/ai-news-fixture/{{run}}-releases-2</guid></item>
+  </channel>
+</rss>

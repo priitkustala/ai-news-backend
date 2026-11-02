@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed with a script title (fixture)</title>
+    <link>https://hostile.example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}} &lt;script&gt;alert('xss-{{run}}')&lt;/script&gt;</title><link>https://hostile.example.com/ai-news-fixture/{{run}}-script</link><description>A hostile title.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://hostile.example.com/ai-news-fixture/{{run}}-script</guid></item>
+  </channel>
+</rss>
