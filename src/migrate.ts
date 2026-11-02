@@ -1,10 +1,14 @@
 // `migrate`: applies the numbered SQL files of db/migrations that have not run yet, sets the
-// job role's password from the local environment and has PostgREST reload its schema cache.
-// Safe to run again.
+// job role's password from the local environment, has PostgREST reload its schema cache,
+// creates the two synthetic personas in Supabase Auth, registers the test owner as the owner
+// the policies admit, and loads the base seed. Safe to run again.
 import fs from 'node:fs';
 import path from 'node:path';
 import { repositoryRoot, requireEnv, UsageError } from './env.js';
 import { inTransaction, withClient } from './db.js';
+import { ensurePersona, PERSONAS } from './auth.js';
+import { loadSet } from './seed.js';
+import { fixtureSet } from './seed-data.js';
 
 const MIGRATIONS = path.join(repositoryRoot, 'db', 'migrations');
 
@@ -37,5 +41,17 @@ export async function migrate(): Promise<Record<string, unknown>> {
     return now;
   });
 
-  return { migrations_applied: applied, migrations_total: files.length };
+  const personaIds: Record<string, string> = {};
+  for (const persona of PERSONAS) personaIds[persona] = await ensurePersona(persona);
+
+  await withClient('MIGRATION_DATABASE_URL', async (client) => {
+    await client.query(
+      `insert into app_private.owner (singleton, user_id) values (true, $1)
+       on conflict (singleton) do update set user_id = excluded.user_id`,
+      [personaIds.owner],
+    );
+    await loadSet(client, fixtureSet('40g', { run: 'base', fixtures: requireEnv('FIXTURE_FEED_BASE_URL'), now: new Date() }));
+  });
+
+  return { migrations_applied: applied, migrations_total: files.length, personas: PERSONAS, base_seed: 'loaded' };
 }

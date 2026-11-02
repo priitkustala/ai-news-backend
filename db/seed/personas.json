@@ -1,0 +1,5 @@
+{
+  "_comment": "Synthetic personas of the local test environment (priitkustala/ai-news#40). Public test data (Locked, Data classification): they exist only in the local stack, the .test domain is reserved, and the passwords never equal a real credential.",
+  "owner": { "email": "owner@ai-news.test", "password": "synthetic-owner-password-not-real-0001" },
+  "second-user": { "email": "second-user@ai-news.test", "password": "synthetic-second-user-password-not-real-0002" }
+}

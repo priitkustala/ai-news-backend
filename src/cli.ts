@@ -5,36 +5,46 @@
 import { loadLocalEnv, UsageError } from './env.js';
 import { generateKeys } from './keys.js';
 import { migrate } from './migrate.js';
+import { seed } from './seed.js';
+import { isPersona, PERSONAS, signIn } from './auth.js';
 
 const USAGE = `Usage: node dist/cli.js <command> [arguments]
 
 Commands of the job and the local test environment:
   ingest <run-date> [--dry-run]     run the ingestion job for a date (YYYY-MM-DD); --dry-run writes nothing
   seed <fixture-set> <run-marker>   reset the local database to the base seed plus a fixture set
-  sign-in <persona>                 development sign-in of a seeded persona; prints its access token
+  sign-in <persona>                 development sign-in of a seeded persona (${PERSONAS.join(', ')}); prints its access token
 
 Set-up of the local test environment:
   keys                              generate this stack's local keys into the git-ignored .env files (once)
-  migrate                           apply the migrations of db/migrations (safe to run again)
+  migrate                           apply the migrations, create the personas and load the base seed (safe to run again)
 `;
 
 const print = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
 const log = (line: string) => process.stderr.write(`${line}\n`);
 
-class NotYetBuiltError extends Error {}
-
 async function main(argv: string[]): Promise<void> {
-  const [command] = argv;
+  const [command, ...args] = argv;
   if (!command || command === '--help' || command === '-h' || command === 'help') {
     process.stdout.write(USAGE);
     return;
   }
   loadLocalEnv();
   switch (command) {
-    case 'ingest':
-    case 'seed':
-    case 'sign-in':
-      throw new NotYetBuiltError(`${command} is not built yet (priitkustala/ai-news#40).`);
+    case 'ingest': {
+      throw new Error('ingest is not built yet (priitkustala/ai-news#40).');
+    }
+    case 'seed': {
+      if (args.length !== 2) throw new UsageError('seed takes a fixture set and a run marker.');
+      print(await seed(args[0], args[1]));
+      return;
+    }
+    case 'sign-in': {
+      const [persona] = args;
+      if (args.length !== 1 || !isPersona(persona)) throw new UsageError(`sign-in takes one persona: ${PERSONAS.join(' or ')}.`);
+      print({ access_token: await signIn(persona) });
+      return;
+    }
     case 'keys': {
       const result = generateKeys();
       log(result.written.length > 0 ? `keys: wrote ${result.written.join(', ')}` : `keys: kept the existing ${result.kept.join(', ')}`);
