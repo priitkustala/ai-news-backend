@@ -4,6 +4,7 @@
 // output (tests/README-testids.md, Named commands and outputs); messages go to standard error.
 import { loadLocalEnv, UsageError } from './env.js';
 import { generateKeys } from './keys.js';
+import { migrate } from './migrate.js';
 
 const USAGE = `Usage: node dist/cli.js <command> [arguments]
 
@@ -14,6 +15,7 @@ Commands of the job and the local test environment:
 
 Set-up of the local test environment:
   keys                              generate this stack's local keys into the git-ignored .env files (once)
+  migrate                           apply the migrations of db/migrations (safe to run again)
 `;
 
 const print = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -39,6 +41,9 @@ async function main(argv: string[]): Promise<void> {
       print(result);
       return;
     }
+    case 'migrate':
+      print(await migrate());
+      return;
     default:
       throw new UsageError(`Unknown command ${command}.\n${USAGE}`);
   }
