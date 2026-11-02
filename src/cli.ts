@@ -7,6 +7,7 @@ import { generateKeys } from './keys.js';
 import { migrate } from './migrate.js';
 import { seed } from './seed.js';
 import { isPersona, PERSONAS, signIn } from './auth.js';
+import { ingest, parseRunDate } from './ingest.js';
 
 const USAGE = `Usage: node dist/cli.js <command> [arguments]
 
@@ -32,7 +33,11 @@ async function main(argv: string[]): Promise<void> {
   loadLocalEnv();
   switch (command) {
     case 'ingest': {
-      throw new Error('ingest is not built yet (priitkustala/ai-news#40).');
+      const dryRun = args.includes('--dry-run');
+      const rest = args.filter((arg) => arg !== '--dry-run');
+      if (rest.length !== 1) throw new UsageError('ingest takes one run date and the optional --dry-run flag.');
+      print(await ingest(parseRunDate(rest[0]), dryRun, log));
+      return;
     }
     case 'seed': {
       if (args.length !== 2) throw new UsageError('seed takes a fixture set and a run marker.');
