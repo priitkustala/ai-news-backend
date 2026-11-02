@@ -19,6 +19,10 @@ first story of the Development pillar fills this table with exact commands (inst
 build, unit tests, integration tests, end-to-end tests, lint and format, run locally,
 run one test) and the Done When list below. Until then no feature work starts here.
 
+| Task | Where | Command |
+|---|---|---|
+| Start the stack (priitkustala/ai-news#40) | host, Git Bash, this folder (or start the box with `sandbox`, which starts the services with the workload) | `docker compose -p ai-news-backend_devcontainer -f .devcontainer/docker-compose.yml -f .devcontainer/docker-compose.override.yml up -d --wait ai-news-db ai-news-auth ai-news-rest ai-news-api ai-news-feeds ai-news-commands` |
+
 ## Protected Areas
 
 - `AGENTS.md`, `CLAUDE.md`, `.github/`, `CODEOWNERS`: change only in a pull request
