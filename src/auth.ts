@@ -1,6 +1,7 @@
-// Supabase Auth through the local gateway: the development sign-in of a seeded persona
-// (password sign-in, OD-21) and the creation of the personas through Auth's admin
-// interface (the secret key, which the gateway turns into the service_role token).
+// Supabase Auth through the local gateway: the local development sign-in of a seeded synthetic
+// persona with its synthetic credentials from db/seed/personas.json, and the creation of the
+// personas through Auth's admin interface (the secret key, which the gateway turns into the
+// service_role token). The hosted project's sign-in is OD-21 (DECIDED), not set here.
 import fs from 'node:fs';
 import path from 'node:path';
 import { repositoryRoot, requireEnv, UsageError } from './env.js';
@@ -37,7 +38,7 @@ async function authRequest(method: string, route: string, key: string, body?: un
   return { status: response.status, json };
 }
 
-// The development sign-in: a password sign-in of the persona; returns the session's access token.
+// The local development sign-in of a seeded persona; returns the session's access token.
 export async function signIn(persona: Persona): Promise<string> {
   const { email, password } = personaCredentials(persona);
   const result = await authRequest('POST', '/token?grant_type=password', requireEnv('PUBLISHABLE_KEY'), { email, password });
