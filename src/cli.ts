@@ -36,7 +36,10 @@ async function main(argv: string[]): Promise<void> {
       const dryRun = args.includes('--dry-run');
       const rest = args.filter((arg) => arg !== '--dry-run');
       if (rest.length !== 1) throw new UsageError('ingest takes one run date and the optional --dry-run flag.');
-      print(await ingest(parseRunDate(rest[0]), dryRun, log));
+      const report = await ingest(parseRunDate(rest[0]), dryRun, log);
+      print(report);
+      // A run that could not finish its own writes is a failure of the job, not of a source.
+      if (report.error) process.exitCode = 1;
       return;
     }
     case 'seed': {

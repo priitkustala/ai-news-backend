@@ -6,7 +6,10 @@
 // source is collected on its own (module collect); the run ends `completed`, `partial` when
 // some sources failed, or `failed` when every source failed, and stored items are never
 // removed. With --dry-run it fetches and processes and writes nothing. A session advisory
-// lock per run date keeps two starts of the same date from running at once. The run report
+// lock per run date keeps two starts of the same date from running at once. If the run's own
+// writes fail after it started, they are rolled back and the run is recorded `failed` with a
+// safe error (counts.run_error; the command exits 1); if even that record is refused, the
+// command says so and exits 1 without a run report. The run report
 // is the last line of standard output; the log names counts and ids only (Locked R-21).
 import { UsageError } from '../env.js';
 import { inTransaction, withClient, type Client } from '../db.js';
@@ -24,6 +27,17 @@ export type RunReport = {
   source_errors: { source_id: string; error: string }[];
   rejected: { source_id: string; reason: string }[];
   requests: { source_id: string; source_type: string; host: string }[];
+  // Present only when the run could not finish its own writes (recorded as counts.run_error).
+  error?: string;
+};
+
+// The run started but could not be recorded as failed either: nothing about this failure is
+// persisted, so the command reports no run and exits non-zero.
+export class RunNotRecorded extends Error {}
+
+const sqlState = (error: unknown) => {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : undefined;
 };
 
 type Source = CollectSource & { display_policy: string };
@@ -74,6 +88,13 @@ async function collectAndProcess(sources: Source[], log: (line: string) => void)
   const feeds = collected.results.length;
   const status = feeds > 0 && sourceErrors.length === feeds ? 'failed' : sourceErrors.length > 0 ? 'partial' : 'completed';
   return { status, items, sourceErrors, requests: collected.requests, fetched, dropped, feeds, skipped: collected.skipped.length };
+}
+
+function countsOf(work: Awaited<ReturnType<typeof collectAndProcess>>, added: number) {
+  return {
+    sources: work.feeds, sources_failed: work.sourceErrors.length, sources_skipped: work.skipped,
+    fetched: work.fetched, processed: work.items.length, dropped: work.dropped, added,
+  };
 }
 
 export async function ingest(runDate: string, dryRun: boolean, log: (line: string) => void): Promise<RunReport> {
@@ -136,39 +157,67 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
       });
       log(existing ? `ingest: run ${runId} of ${runDate} was ${existing.status}; taking it over` : `ingest: run ${runId} of ${runDate} started`);
 
-      const work = await collectAndProcess(sources, log);
-      const added = await inTransaction(client, async () => {
-        let inserted = 0;
-        for (const item of work.items) {
-          const result = await client.query(
-            `insert into public.items (id, canonical_url, source_id, title, published_at, summary, summary_method, status, processing_version)
-             values ($1, $2, $3, $4, $5, $6, $7, 'processed', $8)
-             on conflict do nothing`,
-            [item.id, item.canonical_url, item.source_id, item.title, item.published_at, item.summary,
-              item.summary === null ? null : 'feed', PROCESSING_VERSION],
+      let work: Awaited<ReturnType<typeof collectAndProcess>> | undefined;
+      try {
+        work = await collectAndProcess(sources, log);
+        const done = work;
+        const added = await inTransaction(client, async () => {
+          let inserted = 0;
+          for (const item of done.items) {
+            const result = await client.query(
+              `insert into public.items (id, canonical_url, source_id, title, published_at, summary, summary_method, status, processing_version)
+               values ($1, $2, $3, $4, $5, $6, $7, 'processed', $8)
+               on conflict do nothing`,
+              [item.id, item.canonical_url, item.source_id, item.title, item.published_at, item.summary,
+                item.summary === null ? null : 'feed', PROCESSING_VERSION],
+            );
+            inserted += result.rowCount ?? 0;
+          }
+          await client.query(
+            'update public.ingestion_runs set status = $2, ended_at = now(), counts = $3, source_errors = $4 where id = $1',
+            [runId, done.status, JSON.stringify(countsOf(done, inserted)), JSON.stringify(done.sourceErrors)],
           );
-          inserted += result.rowCount ?? 0;
-        }
-        const counts = {
-          sources: work.feeds, sources_failed: work.sourceErrors.length, sources_skipped: work.skipped,
-          fetched: work.fetched, processed: work.items.length, dropped: work.dropped, added: inserted,
+          return inserted;
+        });
+        const itemCount = await storedItemCount(client);
+        log(`ingest: run ${runId} of ${runDate} ended ${done.status}: fetched ${done.fetched}, processed ${done.items.length}, added ${added}, `
+          + `failed sources ${done.sourceErrors.length}, stored items ${itemCount}`);
+        return {
+          run_id: runId, run_date: runDate, status: done.status, dry_run: false,
+          fetched_count: done.fetched, processed_count: done.items.length, item_count: itemCount,
+          source_errors: done.sourceErrors, rejected: [], requests: done.requests,
         };
-        await client.query(
-          'update public.ingestion_runs set status = $2, ended_at = now(), counts = $3, source_errors = $4 where id = $1',
-          [runId, work.status, JSON.stringify(counts), JSON.stringify(work.sourceErrors)],
-        );
-        return inserted;
-      });
-      const itemCount = await storedItemCount(client);
-      log(`ingest: run ${runId} of ${runDate} ended ${work.status}: fetched ${work.fetched}, processed ${work.items.length}, added ${added}, `
-        + `failed sources ${work.sourceErrors.length}, stored items ${itemCount}`);
-      return {
-        run_id: runId, run_date: runDate, status: work.status, dry_run: false,
-        fetched_count: work.fetched, processed_count: work.items.length, item_count: itemCount,
-        source_errors: work.sourceErrors, rejected: [], requests: work.requests,
-      };
+      } catch (error) {
+        // The run started but its writes failed: the item writes were rolled back with their
+        // transaction, so stored items are as before. The run is recorded `failed` with a safe
+        // error (a SQLSTATE, never a message that could carry feed content; R-21).
+        const code = sqlState(error);
+        const runError = code
+          ? `store: the database refused the run's writes (SQLSTATE ${code}); its item writes were rolled back`
+          : 'unexpected: the run could not finish its writes; its item writes were rolled back';
+        log(`ingest: run ${runId} of ${runDate} could not finish its writes (${code ?? 'no SQLSTATE'}); recording it failed`);
+        try {
+          await client.query(
+            "update public.ingestion_runs set status = 'failed', ended_at = now(), counts = $2, source_errors = $3 where id = $1",
+            [runId, JSON.stringify({ ...(work ? countsOf(work, 0) : {}), run_error: runError }), JSON.stringify(work?.sourceErrors ?? [])],
+          );
+        } catch (recordError) {
+          const recordCode = sqlState(recordError);
+          log(`ingest: run ${runId} of ${runDate} could not be recorded failed either (${recordCode ?? 'no SQLSTATE'}); `
+            + 'its status in the database is unchanged');
+          throw new RunNotRecorded(`the run ${runId} of ${runDate} failed and could not be recorded (${recordCode ?? code ?? 'no SQLSTATE'})`);
+        }
+        const itemCount = await storedItemCount(client);
+        log(`ingest: run ${runId} of ${runDate} ended failed: stored items ${itemCount}`);
+        return {
+          run_id: runId, run_date: runDate, status: 'failed', dry_run: false,
+          fetched_count: work?.fetched ?? 0, processed_count: work?.items.length ?? 0, item_count: itemCount,
+          source_errors: work?.sourceErrors ?? [], rejected: [], requests: work?.requests ?? [], error: runError,
+        };
+      }
     } finally {
-      await client.query(`select pg_advisory_unlock(${LOCK_CLASS}, ${LOCK_KEY})`, [runDate]);
+      // Closing the connection releases the lock as well, so a broken connection is not an error here.
+      await client.query(`select pg_advisory_unlock(${LOCK_CLASS}, ${LOCK_KEY})`, [runDate]).catch(() => undefined);
     }
   });
 }
