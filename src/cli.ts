@@ -7,7 +7,7 @@ import { generateKeys } from './keys.js';
 import { migrate } from './migrate.js';
 import { seed } from './seed.js';
 import { isPersona, PERSONAS, signIn } from './auth.js';
-import { ingest, parseRunDate } from './ingest.js';
+import { ingest, parseRunDate } from './ingest/ingest.js';
 
 const USAGE = `Usage: node dist/cli.js <command> [arguments]
 
