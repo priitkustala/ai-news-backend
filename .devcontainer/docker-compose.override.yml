@@ -169,8 +169,12 @@ services:
       ai-news-local: {}
 
 networks:
+  # One shared network per backend instance and the frontend paired with it
+  # (priitkustala/ai-news#65). AI_NEWS_NETWORK is unset for the repository folder,
+  # which keeps ai-news-local; a story's working copy is started with
+  # AI_NEWS_NETWORK=<its folder name>-local (AGENTS.md, Build, Test, Run).
   ai-news-local:
-    name: ai-news-local
+    name: ${AI_NEWS_NETWORK:-ai-news-local}
     internal: true
 
 volumes:
