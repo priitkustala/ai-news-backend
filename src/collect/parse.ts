@@ -84,9 +84,11 @@ export function parseFeed(body: string): FeedEntry[] {
   let doc: Record<string, unknown>;
   try {
     doc = parser.parse(body) as Record<string, unknown>;
-  } catch (error) {
-    // The parser's message names the refused construct (for example an external entity), not content.
-    throw new SourceFailure('invalid-xml', error instanceof Error ? error.message.slice(0, 120) : 'the feed could not be parsed');
+  } catch {
+    // A fixed message: the parser's own text could quote the feed (R-21: the log and the run
+    // report carry no feed content). What the parser refuses here is a DOCTYPE construct,
+    // such as an external entity.
+    throw new SourceFailure('invalid-xml', 'the parser refused the document (a DOCTYPE or entity construct)');
   }
   const rss = doc.rss as Record<string, unknown> | undefined;
   if (rss && typeof rss === 'object') {
