@@ -19,6 +19,9 @@ Commands of the job and the local test environment:
 Set-up of the local test environment:
   keys                              generate this stack's local keys into the git-ignored .env files (once)
   migrate                           apply the migrations, create the personas and load the base seed (safe to run again)
+
+Exit status: 0 done; 1 failed (for ingest: the run could not finish its writes); 2 usage;
+3 ingest: the run is persisted as reported, but a read for the report failed after the commit.
 `;
 
 const print = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -40,6 +43,8 @@ async function main(argv: string[]): Promise<void> {
       print(report);
       // A run that could not finish its own writes is a failure of the job, not of a source.
       if (report.error) process.exitCode = 1;
+      // The run is persisted as reported, but a read for the report failed after the commit.
+      else if (report.report_error) process.exitCode = 3;
       return;
     }
     case 'seed': {

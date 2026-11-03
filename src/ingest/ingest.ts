@@ -9,7 +9,10 @@
 // lock per run date keeps two starts of the same date from running at once. If the run's own
 // writes fail after it started, they are rolled back and the run is recorded `failed` with a
 // safe error (counts.run_error; the command exits 1); if even that record is refused, the
-// command says so and exits 1 without a run report. The run report
+// command says so and exits 1 without a run report. A read that fails after the run's writes
+// committed (the stored-item count of the report) changes nothing in the database: the run
+// stays as committed, the report carries item_count null and report_error, and the command
+// exits 3 (report incomplete). The run report
 // is the last line of standard output; the log names counts and ids only (Locked R-21).
 import { UsageError } from '../env.js';
 import { inTransaction, withClient, type Client } from '../db.js';
@@ -23,12 +26,16 @@ export type RunReport = {
   dry_run: boolean;
   fetched_count: number;
   processed_count: number;
-  item_count: number;
+  // null when the count could not be read after the run's writes committed (see report_error).
+  item_count: number | null;
   source_errors: { source_id: string; error: string }[];
   rejected: { source_id: string; reason: string }[];
   requests: { source_id: string; source_type: string; host: string }[];
   // Present only when the run could not finish its own writes (recorded as counts.run_error).
   error?: string;
+  // Present only when a read for the report failed after the run's outcome was committed; the
+  // persisted run is unaffected.
+  report_error?: string;
 };
 
 // The run started but could not be recorded as failed either: nothing about this failure is
@@ -59,6 +66,20 @@ const errorKind = (error: string) => error.split(':', 1)[0];
 
 async function storedItemCount(client: Client): Promise<number> {
   return Number((await client.query<{ n: string }>('select count(*) as n from public.items')).rows[0].n);
+}
+
+// The stored-item count for the report once the run's outcome is persisted. Nothing can be
+// rolled back any more at that point, so a failed read is reported as such, never as a
+// failure of the run.
+async function reportedItemCount(client: Client, runId: string, runDate: string, log: (line: string) => void) {
+  try {
+    return { itemCount: await storedItemCount(client) };
+  } catch (error) {
+    const code = sqlState(error);
+    const reportError = `report: the stored-item count could not be read after the run's outcome was committed (${code ? `SQLSTATE ${code}` : 'no SQLSTATE'}); the run's status and counts are as committed`;
+    log(`ingest: run ${runId} of ${runDate}: reporting failure after the commit (${code ?? 'no SQLSTATE'}); the stored-item count is unknown, the run is recorded as committed`);
+    return { itemCount: null, reportError };
+  }
 }
 
 async function runOf(client: Client, runDate: string): Promise<RunRow | undefined> {
@@ -158,10 +179,11 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
       log(existing ? `ingest: run ${runId} of ${runDate} was ${existing.status}; taking it over` : `ingest: run ${runId} of ${runDate} started`);
 
       let work: Awaited<ReturnType<typeof collectAndProcess>> | undefined;
+      let added: number;
       try {
         work = await collectAndProcess(sources, log);
         const done = work;
-        const added = await inTransaction(client, async () => {
+        added = await inTransaction(client, async () => {
           let inserted = 0;
           for (const item of done.items) {
             const result = await client.query(
@@ -179,14 +201,6 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
           );
           return inserted;
         });
-        const itemCount = await storedItemCount(client);
-        log(`ingest: run ${runId} of ${runDate} ended ${done.status}: fetched ${done.fetched}, processed ${done.items.length}, added ${added}, `
-          + `failed sources ${done.sourceErrors.length}, stored items ${itemCount}`);
-        return {
-          run_id: runId, run_date: runDate, status: done.status, dry_run: false,
-          fetched_count: done.fetched, processed_count: done.items.length, item_count: itemCount,
-          source_errors: done.sourceErrors, rejected: [], requests: done.requests,
-        };
       } catch (error) {
         // The run started but its writes failed: the item writes were rolled back with their
         // transaction, so stored items are as before. The run is recorded `failed` with a safe
@@ -207,14 +221,26 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
             + 'its status in the database is unchanged');
           throw new RunNotRecorded(`the run ${runId} of ${runDate} failed and could not be recorded (${recordCode ?? code ?? 'no SQLSTATE'})`);
         }
-        const itemCount = await storedItemCount(client);
-        log(`ingest: run ${runId} of ${runDate} ended failed: stored items ${itemCount}`);
+        const { itemCount, reportError } = await reportedItemCount(client, runId, runDate, log);
+        log(`ingest: run ${runId} of ${runDate} ended failed: stored items ${itemCount ?? 'unknown'}`);
         return {
           run_id: runId, run_date: runDate, status: 'failed', dry_run: false,
           fetched_count: work?.fetched ?? 0, processed_count: work?.items.length ?? 0, item_count: itemCount,
           source_errors: work?.sourceErrors ?? [], rejected: [], requests: work?.requests ?? [], error: runError,
+          ...(reportError ? { report_error: reportError } : {}),
         };
       }
+
+      // The items and the run's status and counts are committed: what follows only reads.
+      const { itemCount, reportError } = await reportedItemCount(client, runId, runDate, log);
+      log(`ingest: run ${runId} of ${runDate} ended ${work.status}: fetched ${work.fetched}, processed ${work.items.length}, added ${added}, `
+        + `failed sources ${work.sourceErrors.length}, stored items ${itemCount ?? 'unknown'}`);
+      return {
+        run_id: runId, run_date: runDate, status: work.status, dry_run: false,
+        fetched_count: work.fetched, processed_count: work.items.length, item_count: itemCount,
+        source_errors: work.sourceErrors, rejected: [], requests: work.requests,
+        ...(reportError ? { report_error: reportError } : {}),
+      };
     } finally {
       // Closing the connection releases the lock as well, so a broken connection is not an error here.
       await client.query(`select pg_advisory_unlock(${LOCK_CLASS}, ${LOCK_KEY})`, [runDate]).catch(() => undefined);
