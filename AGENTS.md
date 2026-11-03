@@ -37,6 +37,33 @@ the host, because the box has no container engine. `<compose>` stands for
 | Unit and integration tests | - | none yet: no unit-tested module exists; the first feature story adds the runner as an approved dependency |
 | Lint and format | - | none approved yet; the type check is `npm run build` (strict) |
 
+### A story's own instance (priitkustala/ai-news#65)
+
+The rows above are for the repository folder `ai-news-backend` and stay as they are. A story
+can instead work in its own instance: a separate clone `ai-news-backend-<key>` next to it in
+the project folder (`<key>` is the story key in lower case, `s-03`, or a task's issue number,
+`65`), with its own branch, box, stack, database and pair network `<folder>-local`, so stories
+build and test in parallel without sharing a database. `<folder>` is `ai-news-backend-<key>`;
+`<icompose>` stands for, from that folder on the host,
+`AI_NEWS_NETWORK=<folder>-local docker compose -p <folder>_devcontainer -f .devcontainer/docker-compose.yml -f .devcontainer/docker-compose.override.yml`.
+Never run `<icompose> config`: it prints the local keys. A frontend instance pairs with one
+backend instance (see `ai-news-frontend`'s `AGENTS.md`).
+
+| Task | Where | Command |
+|---|---|---|
+| Create | host, Git Bash, the project folder | `git clone --no-hardlinks --no-checkout --branch main ai-news-backend <folder>`, then in `<folder>`: `git fetch --no-tags ../ai-news-backend "+refs/remotes/origin/main:refs/remotes/origin/main"`, `git remote set-url origin https://github.com/priitkustala/ai-news-backend.git`, `git reset --hard refs/remotes/origin/main` (GitHub main as the checkout knows it; no git network command) |
+| First start: key placeholders | host, `<folder>` | `[ -e .env.stack-db ] \|\| printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 16)" > .env.stack-db` and `for f in auth rest api; do [ -e .env.stack-$f ] \|\| : > .env.stack-$f; done` (the box does not start while a file is missing, and the database does not initialise without a password; nothing is printed) |
+| Start the box and its stack | host, `<folder>` | `AI_NEWS_NETWORK=<folder>-local sandbox` |
+| Branch | box | `git fetch origin --prune`, `git switch -c <issue>-<slug> --no-track origin/main` |
+| Install and build | box | as above |
+| Local keys, first start | box | `rm -f .env.stack-db .env.stack-auth .env.stack-rest .env.stack-api && node dist/cli.js keys` (the placeholders go first: keys writes nothing while any of its files exists); done at `keys: wrote .env.local, .env.stack-db, .env.stack-auth, .env.stack-rest, .env.stack-api`. Do not start the box again until keys has run |
+| First start: the stack on the new keys | host, `<folder>` | `<icompose> rm -s -f -v ai-news-db`, `docker volume rm <folder>_devcontainer_ai-news-db-data`, `<icompose> up -d --wait --force-recreate ai-news-db ai-news-auth ai-news-rest ai-news-api ai-news-feeds ai-news-commands` |
+| Migrate, seed, sign-in, scenarios | box | as above: `node dist/cli.js migrate`, `node dist/cli.js seed <fixture-set> <run-marker>`, `node dist/cli.js sign-in owner`, `cd e2e && npx playwright test --project=api --grep "@story-<n>"` |
+| Start the stack again | host, `<folder>` | `<icompose> up -d --wait ai-news-db ai-news-auth ai-news-rest ai-news-api ai-news-feeds ai-news-commands` |
+| Stack state | host, `<folder>` | `<icompose> ps` |
+| Stop | host, `<folder>` | `<icompose> stop` |
+| Remove, after the owner merged the instance's pull request | box, then host | box: `git status --porcelain` prints nothing, and `git rev-parse HEAD` equals the `headRefOid` of `gh pr list --repo priitkustala/ai-news-backend --head <branch> --state merged --json headRefOid`; otherwise stop. Remove a paired frontend instance first. Host, `<folder>`: `<icompose> down -v` (the instance's containers, networks and database volume; the external `agent-*` volumes stay), then from the project folder `rm -rf <folder>` |
+
 ## Protected Areas
 
 - `AGENTS.md`, `CLAUDE.md`, `.github/`, `CODEOWNERS`: change only in a pull request
