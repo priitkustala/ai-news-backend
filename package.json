@@ -4,11 +4,14 @@
   "private": true,
   "description": "ai-news backend: the ingestion job command and the local test environment",
   "type": "module",
-  "engines": { "node": ">=22 <23" },
+  "engines": {
+    "node": ">=22 <23"
+  },
   "scripts": {
     "build": "tsc"
   },
   "dependencies": {
+    "fast-xml-parser": "5.11.2",
     "pg": "8.23.1"
   },
   "devDependencies": {

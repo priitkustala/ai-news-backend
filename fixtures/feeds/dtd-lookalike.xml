@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A comment that mentions <!DOCTYPE rss> is text, not a declaration. -->
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed with DOCTYPE lookalikes in a comment and CDATA</title>
+    <link>https://dtd-lookalike.example.com</link>
+    <description>Benign lookalikes are kept.</description>
+    <item><title>{{run}} synthetic AI item about DTDs</title><link>https://dtd-lookalike.example.com/ai-news-fixture/{{run}}</link><description><![CDATA[Write <!DOCTYPE html> at the top of a page.]]></description><pubDate>{{at_rfc822}}</pubDate></item>
+  </channel>
+</rss>

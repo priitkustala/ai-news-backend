@@ -7,7 +7,7 @@ import { generateKeys } from './keys.js';
 import { migrate } from './migrate.js';
 import { seed } from './seed.js';
 import { isPersona, PERSONAS, signIn } from './auth.js';
-import { ingest, parseRunDate } from './ingest.js';
+import { ingest, parseRunDate } from './ingest/ingest.js';
 
 const USAGE = `Usage: node dist/cli.js <command> [arguments]
 
@@ -19,6 +19,9 @@ Commands of the job and the local test environment:
 Set-up of the local test environment:
   keys                              generate this stack's local keys into the git-ignored .env files (once)
   migrate                           apply the migrations, create the personas and load the base seed (safe to run again)
+
+Exit status: 0 done; 1 failed (for ingest: the run could not finish its writes); 2 usage;
+3 ingest: the run is persisted as reported, but a read for the report failed after the commit.
 `;
 
 const print = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -36,7 +39,12 @@ async function main(argv: string[]): Promise<void> {
       const dryRun = args.includes('--dry-run');
       const rest = args.filter((arg) => arg !== '--dry-run');
       if (rest.length !== 1) throw new UsageError('ingest takes one run date and the optional --dry-run flag.');
-      print(await ingest(parseRunDate(rest[0]), dryRun, log));
+      const report = await ingest(parseRunDate(rest[0]), dryRun, log);
+      print(report);
+      // A run that could not finish its own writes is a failure of the job, not of a source.
+      if (report.error) process.exitCode = 1;
+      // The run is persisted as reported, but a read for the report failed after the commit.
+      else if (report.report_error) process.exitCode = 3;
       return;
     }
     case 'seed': {
