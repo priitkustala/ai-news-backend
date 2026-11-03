@@ -80,6 +80,10 @@ backend instance (see `ai-news-frontend`'s `AGENTS.md`).
   owner; the story in hand is not widened.
 - Branch per story; changes reach `main` only through a pull request the owner
   reviews and merges. No agent merges, releases or deploys.
+- Repository work, from the branch through commits, push, pull request, review and
+  the steps after the merge, follows the project skill `github-flow` in the team
+  context store (`.agents/skills/github-flow`); Claude Code loads it with the Skill
+  tool, Codex CLI reads its `SKILL.md`.
 - Every pull request fills `.github/PULL_REQUEST_TEMPLATE.md`, and carries the label
   `ai-assisted` when any part was produced by an agent.
 - Tests use seeded test data only, never real personal data.
@@ -105,6 +109,8 @@ the project folder, next to `ai-news-team-context/`.
    context is mounted read-only at `/workspaces/ai-news-team-context` and the
    testing skill at `/workspaces/.skills/outside-in-e2e-testing`; read the front
    door and `rules/regression-contract.md` from there.
+   The `github-flow` skill is read inside the box at
+   `/workspaces/ai-news-team-context/.agents/skills/github-flow/SKILL.md`.
 4. If the team context cannot be read at all (a clone on its own), stop and say
    so. Do not start work that the missing rules govern.
 
