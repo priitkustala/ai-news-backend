@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE rss SYSTEM "{{origin}}/entities/never-request.dtd?run={{run}}">
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed with an external DTD</title>
+    <link>https://dtd-external.example.com</link>
+    <description>The external DTD address must never be requested.</description>
+    <item><title>{{run}} synthetic AI item</title><link>https://dtd-external.example.com/ai-news-fixture/{{run}}</link><description>A synthetic AI item.</description><pubDate>{{at_rfc822}}</pubDate></item>
+  </channel>
+</rss>

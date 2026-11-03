@@ -1,9 +1,10 @@
 // Parsing of one feed body into its entries (priitkustala/ai-news-backend#1, S-02): RSS 2.0,
-// RSS 1.0 (RDF) and Atom, with the approved parser fast-xml-parser 5.11.2. The XML is
-// validated first, because the parser itself accepts malformed input; DTD and entity
-// processing is off (B-03): a DOCTYPE that declares an external entity is refused by the
-// parser, an internal one is never expanded, and only the five predefined XML entities and
-// numeric character references are decoded, in one pass.
+// RSS 1.0 (RDF) and Atom, with the approved parser fast-xml-parser 5.11.2. No DTD is
+// processed (B-03): a document that carries a DOCTYPE declaration is refused before the
+// validator or the parser sees it, so their DTD readers never run. The XML is then
+// validated, because the parser itself accepts malformed input; entity processing stays off,
+// and only the five predefined XML entities and numeric character references are decoded,
+// in one pass.
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { SourceFailure } from './fetch.js';
 
@@ -76,7 +77,30 @@ function entryOf(raw: Record<string, unknown>, atom: boolean): FeedEntry {
   };
 }
 
+// Whether the document declares a DOCTYPE: a `<!DOCTYPE` outside comments, CDATA sections
+// and processing instructions (inside those it is text, and is kept). Anywhere else a
+// literal `<` starts markup, so this is the declaration itself. An unterminated comment,
+// CDATA section or instruction ends the scan; the validator then refuses the document.
+export function declaresDoctype(body: string): boolean {
+  let at = 0;
+  while ((at = body.indexOf('<', at)) !== -1) {
+    const skip = body.startsWith('<!--', at) ? '-->' : body.startsWith('<![CDATA[', at) ? ']]>' : body.startsWith('<?', at) ? '?>' : null;
+    if (skip) {
+      const end = body.indexOf(skip, at + 2);
+      if (end === -1) return false;
+      at = end + skip.length;
+      continue;
+    }
+    if (body.slice(at, at + 9).toUpperCase() === '<!DOCTYPE') return true;
+    at += 1;
+  }
+  return false;
+}
+
 export function parseFeed(body: string): FeedEntry[] {
+  if (declaresDoctype(body)) {
+    throw new SourceFailure('invalid-xml', 'the document declares a DOCTYPE; DTDs are not processed');
+  }
   const valid = XMLValidator.validate(body);
   if (valid !== true) {
     throw new SourceFailure('invalid-xml', `${valid.err.code} at line ${valid.err.line}, column ${valid.err.col}`);
@@ -86,9 +110,8 @@ export function parseFeed(body: string): FeedEntry[] {
     doc = parser.parse(body) as Record<string, unknown>;
   } catch {
     // A fixed message: the parser's own text could quote the feed (R-21: the log and the run
-    // report carry no feed content). What the parser refuses here is a DOCTYPE construct,
-    // such as an external entity.
-    throw new SourceFailure('invalid-xml', 'the parser refused the document (a DOCTYPE or entity construct)');
+    // report carry no feed content).
+    throw new SourceFailure('invalid-xml', 'the parser refused the document');
   }
   const rss = doc.rss as Record<string, unknown> | undefined;
   if (rss && typeof rss === 'object') {

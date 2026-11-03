@@ -4,7 +4,12 @@
 // Reddit Data API listing. No internet egress: every address it serves is local. A feed
 // address may carry `run` (the scenario's run marker) and `at` (an ISO 8601 instant); the
 // templates use them as {{run}}, {{at_iso}} and {{at_rfc822}}, so a seeded source's feed
-// carries the marker of the scenario that seeded it. Node 22's built-in modules only.
+// carries the marker of the scenario that seeded it; {{origin}} is this server's own address
+// as the request reached it. /stall/body and /disconnect/body send their headers and then
+// stall or drop the connection (bounded retry of a body read, S-02 round 2). With
+// FIXTURE_LOG_REQUESTS=1 every request path is logged to standard output; a request for
+// /entities/never-request.dtd is always logged, because no job may ever make it. Node 22's
+// built-in modules only.
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -25,8 +30,9 @@ function params(url) {
   };
 }
 
-function fill(template, { run, at }) {
+function fill(template, { run, at, origin }) {
   return template
+    .replaceAll('{{origin}}', origin)
     .replaceAll('{{run}}', run)
     .replaceAll('{{at_iso}}', at.toISOString())
     .replaceAll('{{at_rfc822}}', at.toUTCString())
@@ -73,8 +79,23 @@ function send(response, status, type, body) {
 
 const server = http.createServer((request, response) => {
   const url = new URL(request.url ?? '/', 'http://fixtures.local');
-  const p = params(url);
+  const p = { ...params(url), origin: `http://${request.headers.host ?? `localhost:${PORT}`}` };
   let match;
+  if (process.env.FIXTURE_LOG_REQUESTS === '1') process.stdout.write(`request ${request.method} ${url.pathname}\n`);
+  if (url.pathname === '/entities/never-request.dtd') {
+    process.stdout.write('CANARY: /entities/never-request.dtd was requested\n');
+    return send(response, 200, 'application/xml-dtd', '<!ENTITY never "never">\n');
+  }
+  if ((match = url.pathname.match(/^\/(stall|disconnect)\/body\/[A-Za-z0-9-]+$/))) {
+    response.writeHead(200, { 'Content-Type': 'application/rss+xml; charset=utf-8', 'Cache-Control': 'no-store' });
+    response.write('<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel>');
+    if (match[1] === 'disconnect') setTimeout(() => request.socket.destroy(), 100);
+    else {
+      const stall = setTimeout(() => response.end('</channel></rss>\n'), 120_000);
+      response.on('close', () => clearTimeout(stall));
+    }
+    return;
+  }
   if (request.method !== 'GET' && request.method !== 'HEAD') return send(response, 405, 'text/plain', 'method not allowed\n');
   if (url.pathname === '/health') return send(response, 200, 'text/plain', 'ok\n');
   if ((match = url.pathname.match(/^\/status\/(\d{3})\/[A-Za-z0-9-]+$/))) {
