@@ -2,8 +2,10 @@
 // Architecture: per-source fetch with bounded retry). Only the configured address is
 // requested: a redirect is not followed but recorded as the source's failure, so the job
 // never reaches a host outside the source configuration (B-03). Each attempt has a timeout
-// and a size bound; a transient failure (network, timeout, HTTP 429 or 5xx) is retried with
-// backoff, any other failure is final at once. Node 22's built-in fetch, no dependency.
+// (covering the headers and the whole body) and a size bound; a transient failure (network,
+// timeout, HTTP 429 or 5xx), whether it happens before the headers or while the body is read,
+// is retried with backoff, any other failure (size, redirect, other HTTP status) is final at
+// once. Node 22's built-in fetch, no dependency.
 
 export const FETCH_ATTEMPTS = 3;
 export const FETCH_BACKOFF_MS = [250, 750];
@@ -34,6 +36,17 @@ async function readBounded(response: Response): Promise<string> {
   return new TextDecoder('utf-8').decode(Buffer.concat(chunks));
 }
 
+// A thrown fetch or body-stream error as a SourceFailure: a timeout or a network failure is
+// transient; its cause code (for example UND_ERR_SOCKET) is kept, never a message text.
+function classify(error: unknown, stage: string): SourceFailure {
+  if (error instanceof SourceFailure) return error;
+  if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+    return new SourceFailure('timeout', `no complete answer within ${FETCH_TIMEOUT_MS} ms (${stage})`, true);
+  }
+  const cause = error instanceof Error ? (error.cause as { code?: string } | undefined)?.code : undefined;
+  return new SourceFailure('network', `the connection failed ${stage}${cause ? ` (${cause})` : ''}`, true);
+}
+
 async function attempt(url: string): Promise<string> {
   let response: Response;
   try {
@@ -43,22 +56,23 @@ async function attempt(url: string): Promise<string> {
       headers: { accept: 'application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9', 'user-agent': 'ai-news-backend ingest' },
     });
   } catch (error) {
-    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
-      throw new SourceFailure('timeout', `no answer within ${FETCH_TIMEOUT_MS} ms`, true);
-    }
-    const cause = error instanceof Error ? (error.cause as { code?: string } | undefined)?.code : undefined;
-    throw new SourceFailure('network', cause ? `the request failed (${cause})` : 'the request failed', true);
+    throw classify(error, 'before the headers');
   }
   if (response.status >= 300 && response.status < 400) {
-    await response.body?.cancel();
+    await response.body?.cancel().catch(() => undefined);
     throw new SourceFailure(`http-${response.status}`, `the feed answered HTTP ${response.status}; redirects are not followed`);
   }
   if (!response.ok) {
-    await response.body?.cancel();
+    await response.body?.cancel().catch(() => undefined);
     const transient = response.status === 429 || response.status >= 500;
     throw new SourceFailure(`http-${response.status}`, `the feed answered HTTP ${response.status}`, transient);
   }
-  return readBounded(response);
+  try {
+    return await readBounded(response);
+  } catch (error) {
+    if (error instanceof SourceFailure) await response.body?.cancel().catch(() => undefined);
+    throw classify(error, 'while reading the body');
+  }
 }
 
 // The body of the feed at `url`, or a SourceFailure after at most FETCH_ATTEMPTS attempts.
@@ -67,7 +81,7 @@ export async function fetchFeed(url: string): Promise<{ body: string; attempts: 
     try {
       return { body: await attempt(url), attempts: n };
     } catch (error) {
-      const failure = error instanceof SourceFailure ? error : new SourceFailure('fetch', 'the request could not be made');
+      const failure = classify(error, 'during the request');
       if (!failure.transient || n >= FETCH_ATTEMPTS) {
         throw n > 1 ? new SourceFailure(failure.kind, `${failure.message.slice(failure.kind.length + 2)} (after ${n} attempts)`) : failure;
       }

@@ -81,7 +81,7 @@ const server = http.createServer((request, response) => {
   const url = new URL(request.url ?? '/', 'http://fixtures.local');
   const p = { ...params(url), origin: `http://${request.headers.host ?? `localhost:${PORT}`}` };
   let match;
-  if (process.env.FIXTURE_LOG_REQUESTS === '1') process.stdout.write(`request ${request.method} ${url.pathname}\n`);
+  if (process.env.FIXTURE_LOG_REQUESTS === '1') process.stdout.write(`request ${new Date().toISOString()} ${request.method} ${url.pathname}\n`);
   if (url.pathname === '/entities/never-request.dtd') {
     process.stdout.write('CANARY: /entities/never-request.dtd was requested\n');
     return send(response, 200, 'application/xml-dtd', '<!ENTITY never "never">\n');
