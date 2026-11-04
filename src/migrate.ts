@@ -100,16 +100,24 @@ export async function migrate(): Promise<Record<string, unknown>> {
   };
 }
 
-// The catalog state check-migration compares: the policies and relations of public and
-// whether the ledger holds the probe's entry. Reported as counts and booleans only.
-async function catalogState(client: Client, file: string): Promise<{ policies: number; fingerprint: string; ledger: boolean }> {
-  const result = await client.query<{ policies: number; fingerprint: string; ledger: boolean }>(
+// The catalog state check-migration compares: the policies and relations of public, the roles
+// and their memberships (a probe may add a role a client inherits, F-S05-3) and whether the
+// ledger holds the probe's entry. Reported as counts and booleans only.
+type CatalogState = { policies: number; fingerprint: string; roles: number; role_fingerprint: string; ledger: boolean };
+async function catalogState(client: Client, file: string): Promise<CatalogState> {
+  const result = await client.query<CatalogState>(
     `select (select count(*)::integer from pg_catalog.pg_policies where schemaname = 'public') as policies,
             md5(coalesce((select string_agg(concat_ws('|', tablename, policyname, permissive, roles::text, cmd, qual, with_check), ',' order by tablename, policyname)
                             from pg_catalog.pg_policies where schemaname = 'public'), '')
                 || coalesce((select string_agg(concat_ws('|', c.relname, c.relkind, c.relrowsecurity, c.reloptions::text, c.relacl::text), ',' order by c.relname)
                                from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
                               where n.nspname = 'public'), '')) as fingerprint,
+            (select count(*)::integer from pg_catalog.pg_roles) as roles,
+            md5(coalesce((select string_agg(r.rolname || '|' || r.rolinherit::text, ',' order by r.rolname) from pg_catalog.pg_roles r), '')
+                || coalesce((select string_agg(concat_ws('|', g.rolname, m.rolname, a.admin_option, a.inherit_option, a.set_option), ',' order by g.rolname, m.rolname)
+                               from pg_catalog.pg_auth_members a
+                               join pg_catalog.pg_roles g on g.oid = a.roleid
+                               join pg_catalog.pg_roles m on m.oid = a.member), '')) as role_fingerprint,
             exists (select 1 from app_private.schema_migrations where version = $1) as ledger`,
     [file],
   );
@@ -119,7 +127,7 @@ async function catalogState(client: Client, file: string): Promise<{ policies: n
 // `check-migration <sql-file>`: applies a migration-shaped file the way `migrate` applies each
 // migration (applyMigration), inside a savepoint of a transaction that is always rolled back,
 // and reports whether the owner-only check let it through. For the scenarios of the guard
-// (priitkustala/ai-news#43, F-S05-1); nothing it applies is kept.
+// (priitkustala/ai-news#43, F-S05-1, F-S05-3); nothing it applies is kept.
 export async function checkMigration(sqlFile: string): Promise<Record<string, unknown>> {
   if (!fs.existsSync(sqlFile) || !fs.statSync(sqlFile).isFile()) throw new UsageError(`check-migration: no file ${sqlFile}.`);
   const file = path.basename(sqlFile);
@@ -129,7 +137,7 @@ export async function checkMigration(sqlFile: string): Promise<Record<string, un
     const before = await catalogState(client, file);
     await client.query('begin');
     let findings: { relation: string; finding: string }[] = [];
-    let afterCheck: { policies: number; fingerprint: string; ledger: boolean };
+    let afterCheck: CatalogState;
     try {
       await client.query('savepoint check_migration');
       try {
@@ -148,8 +156,12 @@ export async function checkMigration(sqlFile: string): Promise<Record<string, un
       migration: file,
       owner_only_check: findings.length > 0 ? 'failed' : 'passed',
       findings: findings.map((f) => `${f.relation}: ${f.finding}`),
-      after_check: { policy_change: afterCheck.policies - before.policies, ledger_entry: afterCheck.ledger },
-      after_rollback: { schema_unchanged: after.fingerprint === before.fingerprint, ledger_entry: after.ledger },
+      after_check: { policy_change: afterCheck.policies - before.policies, role_change: afterCheck.roles - before.roles, ledger_entry: afterCheck.ledger },
+      after_rollback: {
+        schema_unchanged: after.fingerprint === before.fingerprint,
+        roles_unchanged: after.role_fingerprint === before.role_fingerprint,
+        ledger_entry: after.ledger,
+      },
     };
   });
 }
