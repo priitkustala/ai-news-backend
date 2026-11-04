@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "deny": [
+      "Task",
+      "Agent",
+      "Workflow",
+      "Bash(claude -p *)",
+      "Bash(claude --print *)",
+      "Bash(codex exec *)"
+    ]
+  },
+  "includeCoAuthoredBy": false
+}
