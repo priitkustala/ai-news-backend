@@ -67,12 +67,14 @@
   // split, breaking the && chain. Then opt-in cross-vendor tooling (installed
   // via the gateway-allowlisted npm registry) and the optional memory engine.
   // Last, Claude Code pinned (priitkustala/ai-news#69): the feature installs the
-  // newest release at every build, so this step installs the tested version over
-  // it as the box user, the form setup-cross-vendor.sh uses for Codex. The version
+  // newest release at every build, as root, so this step hands its package folder
+  // to the box user (npm cannot replace a root-owned folder: EACCES) and installs
+  // the tested version over it as the box user, the form setup-cross-vendor.sh uses
+  // for Codex. The version
   // changes only by a reviewed diff of this line; the workspace launcher refuses a
   // box whose claude --version differs from it. `sandbox sync` replaces this file:
   // its reviewed diff must restore this step and managed-settings.json.
-  "postCreateCommand": "sudo chown node:node /home/node/.claude /home/node/.codex /home/node/.npm-config /commandhistory \"$PWD/node_modules\" && git config --global --add safe.directory \"$PWD\" && bash .devcontainer/setup-cross-vendor.sh && bash .devcontainer/setup-memspec.sh && npm install -g @anthropic-ai/claude-code@2.1.287",
+  "postCreateCommand": "sudo chown node:node /home/node/.claude /home/node/.codex /home/node/.npm-config /commandhistory \"$PWD/node_modules\" && git config --global --add safe.directory \"$PWD\" && bash .devcontainer/setup-cross-vendor.sh && bash .devcontainer/setup-memspec.sh && sudo chown -R node:npm \"$(npm config get prefix)/lib/node_modules/@anthropic-ai\" && npm install -g @anthropic-ai/claude-code@2.1.287",
   "postStartCommand": "bash .devcontainer/check-agent-env.sh",
 
   "customizations": {
