@@ -1,0 +1,260 @@
+{
+  "_comment": "Labels of the frozen validation sample (sample.json, same folder), one per sample item, joined to the item by its link. FIXTURE LABELS, NOT OWNER LABELS: written by the S-06 generator (round 1, 2026-11-04) from the fixtures' own known values (basis), because the owner has not labelled a frozen sample yet (B-25). Feed quality is not claimed from them. To relabel: change labels.ai_relevant (true or false), labels.category (releases, research, policy, business or other) and labels.duplicate_group (null, or a name shared by the items of one story), keep fixture_id and link, and set label_origin to owner.",
+  "label_origin": "fixture",
+  "sample_id": "fixture-sample-2026-11-04",
+  "items": [
+    {
+      "fixture_id": "sample-openai-news-vs-d1-release",
+      "source_id": "openai-news",
+      "link": "https://openai.com/ai-news-fixture/vs-d1-release",
+      "labels": {
+        "ai_relevant": true,
+        "category": "releases",
+        "duplicate_group": null
+      },
+      "basis": "AI-specific source; the base seed files this source's items under releases (src/seed-data.ts, baseSeed); the template is a model release note"
+    },
+    {
+      "fixture_id": "sample-openai-news-vs-d4-release",
+      "source_id": "openai-news",
+      "link": "https://openai.com/ai-news-fixture/vs-d4-release",
+      "labels": {
+        "ai_relevant": true,
+        "category": "releases",
+        "duplicate_group": null
+      },
+      "basis": "as vs-d1-release"
+    },
+    {
+      "fixture_id": "sample-openai-news-vs-d7-release",
+      "source_id": "openai-news",
+      "link": "https://openai.com/ai-news-fixture/vs-d7-release",
+      "labels": {
+        "ai_relevant": true,
+        "category": "releases",
+        "duplicate_group": null
+      },
+      "basis": "as vs-d1-release"
+    },
+    {
+      "fixture_id": "sample-federal-register-ai-vs-d2-rule",
+      "source_id": "federal-register-ai",
+      "link": "https://www.federalregister.gov/ai-news-fixture/vs-d2-rule",
+      "labels": {
+        "ai_relevant": true,
+        "category": "policy",
+        "duplicate_group": null
+      },
+      "basis": "AI-specific source; the base seed files this source's items under policy (baseSeed); the template is a proposed rule on AI"
+    },
+    {
+      "fixture_id": "sample-federal-register-ai-vs-d5-rule",
+      "source_id": "federal-register-ai",
+      "link": "https://www.federalregister.gov/ai-news-fixture/vs-d5-rule",
+      "labels": {
+        "ai_relevant": true,
+        "category": "policy",
+        "duplicate_group": null
+      },
+      "basis": "as vs-d2-rule"
+    },
+    {
+      "fixture_id": "sample-techcrunch-ai-vs-d3-round",
+      "source_id": "techcrunch-ai",
+      "link": "https://techcrunch.com/ai-news-fixture/vs-d3-round",
+      "labels": {
+        "ai_relevant": true,
+        "category": "business",
+        "duplicate_group": null
+      },
+      "basis": "AI-specific source; the base seed files this source's items under business (baseSeed, both items); the template is a startup funding story"
+    },
+    {
+      "fixture_id": "sample-techcrunch-ai-vs-d3-tool",
+      "source_id": "techcrunch-ai",
+      "link": "https://techcrunch.com/ai-news-fixture/vs-d3-tool",
+      "labels": {
+        "ai_relevant": true,
+        "category": "business",
+        "duplicate_group": null
+      },
+      "basis": "AI-specific source; the base seed files this source's items under business (baseSeed, both items, one of them a developer tools company); the category is named Business and developer tools (CATEGORY_NAMES)"
+    },
+    {
+      "fixture_id": "sample-techcrunch-ai-vs-d6-round",
+      "source_id": "techcrunch-ai",
+      "link": "https://techcrunch.com/ai-news-fixture/vs-d6-round",
+      "labels": {
+        "ai_relevant": true,
+        "category": "business",
+        "duplicate_group": null
+      },
+      "basis": "as vs-d3-round"
+    },
+    {
+      "fixture_id": "sample-techcrunch-ai-vs-d6-tool",
+      "source_id": "techcrunch-ai",
+      "link": "https://techcrunch.com/ai-news-fixture/vs-d6-tool",
+      "labels": {
+        "ai_relevant": true,
+        "category": "business",
+        "duplicate_group": null
+      },
+      "basis": "as vs-d3-tool"
+    },
+    {
+      "fixture_id": "sample-simon-willison-vs-d2",
+      "source_id": "simon-willison",
+      "link": "https://simonwillison.net/ai-news-fixture/vs-d2",
+      "labels": {
+        "ai_relevant": true,
+        "category": "other",
+        "duplicate_group": null
+      },
+      "basis": "general source whose template title names an LLM tool (AI-relevant); the base seed files this source's items under other (baseSeed, weekly notes)"
+    },
+    {
+      "fixture_id": "sample-simon-willison-vs-d6",
+      "source_id": "simon-willison",
+      "link": "https://simonwillison.net/ai-news-fixture/vs-d6",
+      "labels": {
+        "ai_relevant": true,
+        "category": "other",
+        "duplicate_group": null
+      },
+      "basis": "as vs-d2"
+    },
+    {
+      "fixture_id": "sample-anthropic-news-mirror-vs-d1",
+      "source_id": "anthropic-news-mirror",
+      "link": "https://www.anthropic.com/news/ai-news-fixture-vs-d1",
+      "labels": {
+        "ai_relevant": true,
+        "category": "releases",
+        "duplicate_group": null
+      },
+      "basis": "AI-specific source; the base seed files this source's items under releases (baseSeed, the mirror announcement)"
+    },
+    {
+      "fixture_id": "sample-anthropic-news-mirror-vs-d5",
+      "source_id": "anthropic-news-mirror",
+      "link": "https://www.anthropic.com/news/ai-news-fixture-vs-d5",
+      "labels": {
+        "ai_relevant": true,
+        "category": "releases",
+        "duplicate_group": null
+      },
+      "basis": "as vs-d1"
+    },
+    {
+      "fixture_id": "sample-fixture-general-vs-d3-ai",
+      "source_id": "fixture-general",
+      "link": "https://general.example.com/ai-news-fixture/vs-d3-ai",
+      "labels": {
+        "ai_relevant": true,
+        "category": "releases",
+        "duplicate_group": null
+      },
+      "basis": "AC-04 fixture: the <run>-ai item is the AI item; its title says a model is released"
+    },
+    {
+      "fixture_id": "sample-fixture-general-vs-d3-general",
+      "source_id": "fixture-general",
+      "link": "https://general.example.com/ai-news-fixture/vs-d3-general",
+      "labels": {
+        "ai_relevant": false,
+        "category": "other",
+        "duplicate_group": null
+      },
+      "basis": "AC-04 fixture: the <run>-general item has no AI keyword and is not AI news; not relevant, so the category label is the default other and is not scored"
+    },
+    {
+      "fixture_id": "sample-fixture-categories-vs-d4-releases",
+      "source_id": "fixture-categories",
+      "link": "https://categories.example.com/ai-news-fixture/vs-d4-releases",
+      "labels": {
+        "ai_relevant": true,
+        "category": "releases",
+        "duplicate_group": null
+      },
+      "basis": "AC-05 fixture: the slug names the category the item is written for"
+    },
+    {
+      "fixture_id": "sample-fixture-categories-vs-d4-research",
+      "source_id": "fixture-categories",
+      "link": "https://categories.example.com/ai-news-fixture/vs-d4-research",
+      "labels": {
+        "ai_relevant": true,
+        "category": "research",
+        "duplicate_group": null
+      },
+      "basis": "AC-05 fixture: the slug names the category"
+    },
+    {
+      "fixture_id": "sample-fixture-categories-vs-d4-policy",
+      "source_id": "fixture-categories",
+      "link": "https://categories.example.com/ai-news-fixture/vs-d4-policy",
+      "labels": {
+        "ai_relevant": true,
+        "category": "policy",
+        "duplicate_group": null
+      },
+      "basis": "AC-05 fixture: the slug names the category"
+    },
+    {
+      "fixture_id": "sample-fixture-categories-vs-d4-business",
+      "source_id": "fixture-categories",
+      "link": "https://categories.example.com/ai-news-fixture/vs-d4-business",
+      "labels": {
+        "ai_relevant": true,
+        "category": "business",
+        "duplicate_group": null
+      },
+      "basis": "AC-05 fixture: the slug names the category"
+    },
+    {
+      "fixture_id": "sample-fixture-categories-vs-d4-unmatched",
+      "source_id": "fixture-categories",
+      "link": "https://categories.example.com/ai-news-fixture/vs-d4-unmatched",
+      "labels": {
+        "ai_relevant": true,
+        "category": "other",
+        "duplicate_group": null
+      },
+      "basis": "AC-05 fixture: the unmatched item is in Other (AC-05 asserts it)"
+    },
+    {
+      "fixture_id": "sample-fixture-categories-vs-d4-releases-2",
+      "source_id": "fixture-categories",
+      "link": "https://categories.example.com/ai-news-fixture/vs-d4-releases-2",
+      "labels": {
+        "ai_relevant": true,
+        "category": "releases",
+        "duplicate_group": null
+      },
+      "basis": "AC-05 fixture: the slug names the category"
+    },
+    {
+      "fixture_id": "sample-fixture-near-title-a-vs-dup",
+      "source_id": "fixture-near-title-a",
+      "link": "https://near-a.example.com/ai-news-fixture/vs-dup",
+      "labels": {
+        "ai_relevant": true,
+        "category": "releases",
+        "duplicate_group": "near-title"
+      },
+      "basis": "AC-07b fixture: the near-identical title pair is one story (duplicate group near-title); the title says a lab releases a model"
+    },
+    {
+      "fixture_id": "sample-fixture-near-title-b-vs-dup",
+      "source_id": "fixture-near-title-b",
+      "link": "https://near-b.example.com/ai-news-fixture/vs-dup",
+      "labels": {
+        "ai_relevant": true,
+        "category": "releases",
+        "duplicate_group": "near-title"
+      },
+      "basis": "AC-07b fixture: the other copy of the near-title pair, 21 hours later from another source"
+    }
+  ]
+}

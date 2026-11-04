@@ -1,0 +1,307 @@
+{
+  "_comment": "The frozen validation sample of the measure command (S-06, priitkustala/ai-news-backend#4; Locked B-25: a 7-day window, at most 20 items per source). Drawn on 2026-11-04 from the committed fixture feed templates under fixtures/feeds/ (drawn_from), each filled with the run markers and publication times under runs, exactly as the fixture feed server fills them, and saved here as the feed body (one string per line). Synthetic; no real feed content. The labels are in labels.json, kept apart so that the labels can be replaced without changing the sample.",
+  "sample_id": "fixture-sample-2026-11-04",
+  "window": {
+    "start": "2026-10-26T00:00:00.000Z",
+    "end": "2026-11-02T00:00:00.000Z"
+  },
+  "max_items_per_source": 20,
+  "sources": [
+    {
+      "id": "openai-news",
+      "name": "OpenAI News",
+      "source_type": "feed",
+      "default_categories": [
+        "releases"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1,
+      "drawn_from": "fixtures/feeds/openai-news.xml",
+      "runs": [
+        {
+          "run": "vs-d1",
+          "at": "2026-10-26T09:00:00Z"
+        },
+        {
+          "run": "vs-d4",
+          "at": "2026-10-29T09:00:00Z"
+        },
+        {
+          "run": "vs-d7",
+          "at": "2026-11-01T09:00:00Z"
+        }
+      ],
+      "feed": [
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+        "<rss version=\"2.0\">",
+        "  <channel>",
+        "    <title>OpenAI News (fixture)</title>",
+        "    <link>https://openai.com/news</link>",
+        "    <description>Synthetic fixture feed of the ai-news local test environment.</description>",
+        "    <item><title>vs-d1 synthetic model release</title><link>https://openai.com/ai-news-fixture/vs-d1-release</link><description>A synthetic release note.</description><pubDate>Mon, 26 Oct 2026 09:00:00 GMT</pubDate><guid>https://openai.com/ai-news-fixture/vs-d1-release</guid></item>",
+        "    <item><title>vs-d4 synthetic model release</title><link>https://openai.com/ai-news-fixture/vs-d4-release</link><description>A synthetic release note.</description><pubDate>Thu, 29 Oct 2026 09:00:00 GMT</pubDate><guid>https://openai.com/ai-news-fixture/vs-d4-release</guid></item>",
+        "    <item><title>vs-d7 synthetic model release</title><link>https://openai.com/ai-news-fixture/vs-d7-release</link><description>A synthetic release note.</description><pubDate>Sun, 01 Nov 2026 09:00:00 GMT</pubDate><guid>https://openai.com/ai-news-fixture/vs-d7-release</guid></item>",
+        "  </channel>",
+        "</rss>"
+      ]
+    },
+    {
+      "id": "federal-register-ai",
+      "name": "US Federal Register",
+      "source_type": "feed",
+      "default_categories": [
+        "policy"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1,
+      "drawn_from": "fixtures/feeds/federal-register-ai.xml",
+      "runs": [
+        {
+          "run": "vs-d2",
+          "at": "2026-10-27T14:00:00Z"
+        },
+        {
+          "run": "vs-d5",
+          "at": "2026-10-30T14:00:00Z"
+        }
+      ],
+      "feed": [
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+        "<rss version=\"2.0\">",
+        "  <channel>",
+        "    <title>US Federal Register: artificial intelligence (fixture)</title>",
+        "    <link>https://www.federalregister.gov</link>",
+        "    <description>Synthetic fixture feed of the ai-news local test environment.</description>",
+        "    <item><title>vs-d2 synthetic proposed rule on AI</title><link>https://www.federalregister.gov/ai-news-fixture/vs-d2-rule</link><description>A synthetic notice.</description><pubDate>Tue, 27 Oct 2026 14:00:00 GMT</pubDate><guid>https://www.federalregister.gov/ai-news-fixture/vs-d2-rule</guid></item>",
+        "    <item><title>vs-d5 synthetic proposed rule on AI</title><link>https://www.federalregister.gov/ai-news-fixture/vs-d5-rule</link><description>A synthetic notice.</description><pubDate>Fri, 30 Oct 2026 14:00:00 GMT</pubDate><guid>https://www.federalregister.gov/ai-news-fixture/vs-d5-rule</guid></item>",
+        "  </channel>",
+        "</rss>"
+      ]
+    },
+    {
+      "id": "techcrunch-ai",
+      "name": "TechCrunch AI",
+      "source_type": "feed",
+      "default_categories": [
+        "business",
+        "releases"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1,
+      "drawn_from": "fixtures/feeds/techcrunch-ai.xml",
+      "runs": [
+        {
+          "run": "vs-d3",
+          "at": "2026-10-28T11:00:00Z"
+        },
+        {
+          "run": "vs-d6",
+          "at": "2026-10-31T11:00:00Z"
+        }
+      ],
+      "feed": [
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+        "<rss version=\"2.0\">",
+        "  <channel>",
+        "    <title>TechCrunch AI (fixture)</title>",
+        "    <link>https://techcrunch.com/category/artificial-intelligence/</link>",
+        "    <description>Synthetic fixture feed of the ai-news local test environment.</description>",
+        "    <item><title>vs-d3 synthetic AI startup raises a round</title><link>https://techcrunch.com/ai-news-fixture/vs-d3-round</link><description>A synthetic business story.</description><pubDate>Wed, 28 Oct 2026 11:00:00 GMT</pubDate><guid>https://techcrunch.com/ai-news-fixture/vs-d3-round</guid></item>",
+        "    <item><title>vs-d3 synthetic developer tool launch</title><link>https://techcrunch.com/ai-news-fixture/vs-d3-tool</link><description>A synthetic product story.</description><pubDate>Wed, 28 Oct 2026 11:00:00 GMT</pubDate><guid>https://techcrunch.com/ai-news-fixture/vs-d3-tool</guid></item>",
+        "    <item><title>vs-d6 synthetic AI startup raises a round</title><link>https://techcrunch.com/ai-news-fixture/vs-d6-round</link><description>A synthetic business story.</description><pubDate>Sat, 31 Oct 2026 11:00:00 GMT</pubDate><guid>https://techcrunch.com/ai-news-fixture/vs-d6-round</guid></item>",
+        "    <item><title>vs-d6 synthetic developer tool launch</title><link>https://techcrunch.com/ai-news-fixture/vs-d6-tool</link><description>A synthetic product story.</description><pubDate>Sat, 31 Oct 2026 11:00:00 GMT</pubDate><guid>https://techcrunch.com/ai-news-fixture/vs-d6-tool</guid></item>",
+        "  </channel>",
+        "</rss>"
+      ]
+    },
+    {
+      "id": "simon-willison",
+      "name": "Simon Willison's Weblog",
+      "source_type": "feed",
+      "default_categories": [
+        "releases",
+        "business"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1,
+      "drawn_from": "fixtures/feeds/simon-willison.xml",
+      "runs": [
+        {
+          "run": "vs-d2",
+          "at": "2026-10-27T18:00:00Z"
+        },
+        {
+          "run": "vs-d6",
+          "at": "2026-10-31T18:00:00Z"
+        }
+      ],
+      "feed": [
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+        "<feed xmlns=\"http://www.w3.org/2005/Atom\">",
+        "  <title>Simon Willison's Weblog (fixture)</title>",
+        "  <link href=\"https://simonwillison.net/\"/>",
+        "  <id>https://simonwillison.net/ai-news-fixture/</id>",
+        "  <updated>2026-10-31T18:00:00.000Z</updated>",
+        "  <entry>",
+        "    <title>vs-d2 synthetic notes on an LLM tool</title>",
+        "    <link href=\"https://simonwillison.net/ai-news-fixture/vs-d2\"/>",
+        "    <id>https://simonwillison.net/ai-news-fixture/vs-d2</id>",
+        "    <updated>2026-10-27T18:00:00.000Z</updated>",
+        "    <summary>A synthetic Atom entry.</summary>",
+        "  </entry>",
+        "  <entry>",
+        "    <title>vs-d6 synthetic notes on an LLM tool</title>",
+        "    <link href=\"https://simonwillison.net/ai-news-fixture/vs-d6\"/>",
+        "    <id>https://simonwillison.net/ai-news-fixture/vs-d6</id>",
+        "    <updated>2026-10-31T18:00:00.000Z</updated>",
+        "    <summary>A synthetic Atom entry.</summary>",
+        "  </entry>",
+        "</feed>"
+      ]
+    },
+    {
+      "id": "anthropic-news-mirror",
+      "name": "Anthropic News",
+      "source_type": "feed",
+      "default_categories": [
+        "releases",
+        "research"
+      ],
+      "display_policy": "title-link",
+      "source_weight": 1,
+      "drawn_from": "fixtures/feeds/anthropic-news-mirror.xml",
+      "runs": [
+        {
+          "run": "vs-d1",
+          "at": "2026-10-26T16:00:00Z"
+        },
+        {
+          "run": "vs-d5",
+          "at": "2026-10-30T16:00:00Z"
+        }
+      ],
+      "feed": [
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+        "<rss version=\"2.0\">",
+        "  <channel>",
+        "    <title>Anthropic News (fixture)</title>",
+        "    <link>https://www.anthropic.com/news</link>",
+        "    <description>Synthetic fixture feed of the ai-news local test environment.</description>",
+        "    <item><title>vs-d1-mirror synthetic announcement</title><link>https://www.anthropic.com/news/ai-news-fixture-vs-d1</link><description>vs-d1-article-body The whole synthetic article, as the mirror carries it.</description><pubDate>Mon, 26 Oct 2026 16:00:00 GMT</pubDate><guid>https://www.anthropic.com/news/ai-news-fixture-vs-d1</guid></item>",
+        "    <item><title>vs-d5-mirror synthetic announcement</title><link>https://www.anthropic.com/news/ai-news-fixture-vs-d5</link><description>vs-d5-article-body The whole synthetic article, as the mirror carries it.</description><pubDate>Fri, 30 Oct 2026 16:00:00 GMT</pubDate><guid>https://www.anthropic.com/news/ai-news-fixture-vs-d5</guid></item>",
+        "  </channel>",
+        "</rss>"
+      ]
+    },
+    {
+      "id": "fixture-general",
+      "name": "Fixture general news feed",
+      "source_type": "feed",
+      "default_categories": [],
+      "display_policy": "feed-summary",
+      "source_weight": 1,
+      "drawn_from": "fixtures/feeds/general.xml",
+      "runs": [
+        {
+          "run": "vs-d3",
+          "at": "2026-10-28T08:00:00Z"
+        }
+      ],
+      "feed": [
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+        "<rss version=\"2.0\">",
+        "  <channel>",
+        "    <title>Fixture general news feed (fixture)</title>",
+        "    <link>https://general.example.com</link>",
+        "    <description>Synthetic fixture feed of the ai-news local test environment.</description>",
+        "    <item><title>vs-d3-ai a new machine learning model is released</title><link>https://general.example.com/ai-news-fixture/vs-d3-ai</link><description>An item about artificial intelligence.</description><pubDate>Wed, 28 Oct 2026 08:00:00 GMT</pubDate><guid>https://general.example.com/ai-news-fixture/vs-d3-ai</guid></item>",
+        "    <item><title>vs-d3-general the city council approves a new park</title><link>https://general.example.com/ai-news-fixture/vs-d3-general</link><description>An item with no AI keyword.</description><pubDate>Wed, 28 Oct 2026 08:00:00 GMT</pubDate><guid>https://general.example.com/ai-news-fixture/vs-d3-general</guid></item>",
+        "  </channel>",
+        "</rss>"
+      ]
+    },
+    {
+      "id": "fixture-categories",
+      "name": "Fixture feed for the category rules",
+      "source_type": "feed",
+      "default_categories": [],
+      "display_policy": "feed-summary",
+      "source_weight": 1,
+      "drawn_from": "fixtures/feeds/categories.xml",
+      "runs": [
+        {
+          "run": "vs-d4",
+          "at": "2026-10-29T12:00:00Z"
+        }
+      ],
+      "feed": [
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+        "<rss version=\"2.0\">",
+        "  <channel>",
+        "    <title>Fixture feed for the category rules (fixture)</title>",
+        "    <link>https://categories.example.com</link>",
+        "    <description>Synthetic fixture feed of the ai-news local test environment.</description>",
+        "    <item><title>vs-d4-releases a lab releases a new open-weights model</title><link>https://categories.example.com/ai-news-fixture/vs-d4-releases</link><description>Model release.</description><pubDate>Thu, 29 Oct 2026 12:00:00 GMT</pubDate><guid>https://categories.example.com/ai-news-fixture/vs-d4-releases</guid></item>",
+        "    <item><title>vs-d4-research a paper on reasoning benchmarks for AI</title><link>https://categories.example.com/ai-news-fixture/vs-d4-research</link><description>Research paper.</description><pubDate>Thu, 29 Oct 2026 12:00:00 GMT</pubDate><guid>https://categories.example.com/ai-news-fixture/vs-d4-research</guid></item>",
+        "    <item><title>vs-d4-policy regulators publish AI Act guidance</title><link>https://categories.example.com/ai-news-fixture/vs-d4-policy</link><description>Regulation.</description><pubDate>Thu, 29 Oct 2026 12:00:00 GMT</pubDate><guid>https://categories.example.com/ai-news-fixture/vs-d4-policy</guid></item>",
+        "    <item><title>vs-d4-business an AI developer tools startup raises funding</title><link>https://categories.example.com/ai-news-fixture/vs-d4-business</link><description>Business.</description><pubDate>Thu, 29 Oct 2026 12:00:00 GMT</pubDate><guid>https://categories.example.com/ai-news-fixture/vs-d4-business</guid></item>",
+        "    <item><title>vs-d4-unmatched an AI system answers a question about cooking</title><link>https://categories.example.com/ai-news-fixture/vs-d4-unmatched</link><description>Matches no category rule.</description><pubDate>Thu, 29 Oct 2026 12:00:00 GMT</pubDate><guid>https://categories.example.com/ai-news-fixture/vs-d4-unmatched</guid></item>",
+        "    <item><title>vs-d4-releases-2 a chatbot update ships to users</title><link>https://categories.example.com/ai-news-fixture/vs-d4-releases-2</link><description>Release.</description><pubDate>Thu, 29 Oct 2026 12:00:00 GMT</pubDate><guid>https://categories.example.com/ai-news-fixture/vs-d4-releases-2</guid></item>",
+        "  </channel>",
+        "</rss>"
+      ]
+    },
+    {
+      "id": "fixture-near-title-a",
+      "name": "Fixture feed A with a near-identical title",
+      "source_type": "feed",
+      "default_categories": [],
+      "display_policy": "feed-summary",
+      "source_weight": 1,
+      "drawn_from": "fixtures/feeds/near-title-a.xml",
+      "runs": [
+        {
+          "run": "vs-dup",
+          "at": "2026-10-30T10:00:00Z"
+        }
+      ],
+      "feed": [
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+        "<rss version=\"2.0\">",
+        "  <channel>",
+        "    <title>Fixture feed A (fixture)</title>",
+        "    <link>https://near-a.example.com</link>",
+        "    <description>Synthetic fixture feed of the ai-news local test environment.</description>",
+        "    <item><title>vs-dup-near-title: Lab Releases New AI Model</title><link>https://near-a.example.com/ai-news-fixture/vs-dup</link><description>Source A.</description><pubDate>Fri, 30 Oct 2026 10:00:00 GMT</pubDate><guid>https://near-a.example.com/ai-news-fixture/vs-dup</guid></item>",
+        "  </channel>",
+        "</rss>"
+      ]
+    },
+    {
+      "id": "fixture-near-title-b",
+      "name": "Fixture feed B with a near-identical title",
+      "source_type": "feed",
+      "default_categories": [],
+      "display_policy": "feed-summary",
+      "source_weight": 1,
+      "drawn_from": "fixtures/feeds/near-title-b.xml",
+      "runs": [
+        {
+          "run": "vs-dup",
+          "at": "2026-10-31T07:00:00Z"
+        }
+      ],
+      "feed": [
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+        "<rss version=\"2.0\">",
+        "  <channel>",
+        "    <title>Fixture feed B (fixture)</title>",
+        "    <link>https://near-b.example.com</link>",
+        "    <description>Synthetic fixture feed of the ai-news local test environment.</description>",
+        "    <item><title>vs-dup-near-title - lab releases new AI model!</title><link>https://near-b.example.com/ai-news-fixture/vs-dup</link><description>Source B, within 48 hours.</description><pubDate>Sat, 31 Oct 2026 07:00:00 GMT</pubDate><guid>https://near-b.example.com/ai-news-fixture/vs-dup</guid></item>",
+        "  </channel>",
+        "</rss>"
+      ]
+    }
+  ]
+}
