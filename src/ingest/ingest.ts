@@ -5,8 +5,11 @@
 // an earlier date left `running` by an interrupted job is marked `abandoned`. Every enabled
 // source is collected on its own (module collect); the run ends `completed`, `partial` when
 // some sources failed, or `failed` when every source failed, and stored items are never
-// removed. In the same transaction as the run's new items, every stored item is clustered
-// again with the earlier ones, scored, and the arXiv items beyond the daily cap marked (S-04,
+// removed. A copy of a stored item's canonical address takes over that item's row (its id
+// stays) only when it wins under B-07 (a higher source weight, or the same and an earlier
+// time); otherwise it changes nothing. In the same transaction as the run's new items, every
+// stored item is clustered again with the earlier ones, scored, and the arXiv items beyond the
+// daily cap marked (S-04,
 // src/process/apply.ts), so the `feed` view shows one representative per cluster by score.
 // With --dry-run it fetches and processes and writes nothing. A session advisory lock per run
 // date keeps two starts of the same date from running at once. If the run's own
@@ -110,8 +113,9 @@ async function collectAndProcess(sources: Source[], log: (line: string) => void)
     items.push(...processed.items);
     dropped += processed.dropped;
   }
-  // Of two new items with the same canonical address the insert keeps the first, so the items
-  // are stored in the representative order of B-07: the highest source weight, then the earliest.
+  // The items are stored in the representative order of B-07 (the highest source weight, then
+  // the earliest), so of two copies of one canonical address in this run the first is the winner
+  // and the later one changes nothing (see the insert below).
   const weightOf = new Map(sources.map((s) => [s.id, Number(s.source_weight)]));
   const candidate = (item: ItemToStore) => ({
     ...item, source_weight: weightOf.get(item.source_id) ?? 0, time: item.published_at ? Date.parse(item.published_at) : Date.now(),
@@ -120,13 +124,14 @@ async function collectAndProcess(sources: Source[], log: (line: string) => void)
   for (const skip of collected.skipped) log(`ingest: source ${skip.source_id} skipped (not a feed source)`);
   const feeds = collected.results.length;
   const status = feeds > 0 && sourceErrors.length === feeds ? 'failed' : sourceErrors.length > 0 ? 'partial' : 'completed';
-  return { status, items, sourceErrors, requests: collected.requests, fetched, dropped, feeds, skipped: collected.skipped.length };
+  return { status, items, weightOf, sourceErrors, requests: collected.requests, fetched, dropped, feeds, skipped: collected.skipped.length };
 }
 
-function countsOf(work: Awaited<ReturnType<typeof collectAndProcess>>, added: number, processing?: ProcessingCounts) {
+function countsOf(work: Awaited<ReturnType<typeof collectAndProcess>>, added: number, processing?: ProcessingCounts, replaced?: number) {
   return {
     sources: work.feeds, sources_failed: work.sourceErrors.length, sources_skipped: work.skipped,
     fetched: work.fetched, processed: work.items.length, dropped: work.dropped, added,
+    ...(replaced === undefined ? {} : { replaced }),
     ...(processing ? { clusters: processing.clusters, duplicates_not_shown: processing.hidden, arxiv_capped: processing.arxiv_capped } : {}),
   };
 }
@@ -198,20 +203,37 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
         const done = work;
         added = await inTransaction(client, async () => {
           let inserted = 0;
+          let replaced = 0;
           for (const item of done.items) {
-            const result = await client.query(
-              `insert into public.items (id, canonical_url, source_id, title, published_at, summary, summary_method, status, processing_version)
+            // A copy of a stored canonical address (B-07, review finding F-S04-1): the stored row
+            // keeps its id and takes the copy's source-bound fields only when the copy wins in the
+            // representative order (src/process/dedupe.ts: the higher source weight, then the
+            // earlier publication or else fetch time; an equal copy changes nothing); a losing
+            // copy updates no row. Cluster, score and cap marks follow in applyProcessing.
+            const result = await client.query<{ inserted: boolean }>(
+              `insert into public.items as i (id, canonical_url, source_id, title, published_at, summary, summary_method, status, processing_version)
                values ($1, $2, $3, $4, $5, $6, $7, 'processed', $8)
-               on conflict do nothing`,
+               on conflict (canonical_url) do update
+                  set source_id = excluded.source_id, title = excluded.title, published_at = excluded.published_at,
+                      fetched_at = excluded.fetched_at, image_url = excluded.image_url, summary = excluded.summary,
+                      summary_method = excluded.summary_method, processing_version = excluded.processing_version
+                where $9::float8 > coalesce((select s.source_weight::float8 from app_private.sources s where s.id = i.source_id), 0)
+                   or ($9::float8 = coalesce((select s.source_weight::float8 from app_private.sources s where s.id = i.source_id), 0)
+                       and coalesce(excluded.published_at, excluded.fetched_at) < coalesce(i.published_at, i.fetched_at))
+               returning (xmax = 0) as inserted`,
               [item.id, item.canonical_url, item.source_id, item.title, item.published_at, item.summary,
-                item.summary === null ? null : 'feed', PROCESSING_VERSION],
+                item.summary === null ? null : 'feed', PROCESSING_VERSION, done.weightOf.get(item.source_id) ?? 0],
             );
-            inserted += result.rowCount ?? 0;
+            for (const row of result.rows) {
+              if (row.inserted) inserted += 1;
+              else replaced += 1;
+            }
           }
           const processing = await applyProcessing(client, log);
+          if (replaced) log(`ingest: ${replaced} stored item(s) taken over by a copy that represents them under B-07`);
           await client.query(
             'update public.ingestion_runs set status = $2, ended_at = now(), counts = $3, source_errors = $4 where id = $1',
-            [runId, done.status, JSON.stringify(countsOf(done, inserted, processing)), JSON.stringify(done.sourceErrors)],
+            [runId, done.status, JSON.stringify(countsOf(done, inserted, processing, replaced)), JSON.stringify(done.sourceErrors)],
           );
           return inserted;
         });
