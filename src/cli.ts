@@ -9,6 +9,8 @@ import { seed } from './seed.js';
 import { isPersona, PERSONAS, signIn } from './auth.js';
 import { ingest, parseRunDate } from './ingest/ingest.js';
 import { scanSecrets } from './scan/scan.js';
+import { measure } from './measure/measure.js';
+import { MeasureError } from './measure/sample.js';
 
 const USAGE = `Usage: node dist/cli.js <command> [arguments]
 
@@ -18,6 +20,8 @@ Commands of the job and the local test environment:
   sign-in <persona>                 development sign-in of a seeded persona (${PERSONAS.join(', ')}); prints its access token
   scan-secrets <path>...            scan a repository, a folder or a file for this stack's seeded secrets
                                     (counts and pattern names only) and the key kinds a built client carries
+  measure                           run the pipeline on the frozen validation sample (fixtures/validation-sample/) and print
+                                    the measurement report: values only, no verdict (OD-26)
 
 Set-up of the local test environment:
   keys                              generate this stack's local keys into the git-ignored .env files (once)
@@ -25,7 +29,7 @@ Set-up of the local test environment:
   check-migration <sql-file>        apply a migration-shaped file as migrate would, report the owner-only check's
                                     verdict and findings, and roll everything back (scenarios of the guard)
 
-Exit status: 0 done; 1 failed (for ingest: the run could not finish its writes); 2 usage;
+Exit status: 0 done; 1 failed (for ingest: the run could not finish its writes; for measure: the sample cannot be measured); 2 usage;
 3 ingest: the run is persisted as reported, but a read for the report failed after the commit.
 scan-secrets exits 1 when it finds a seeded secret (the report is printed first).
 `;
@@ -70,6 +74,11 @@ async function main(argv: string[]): Promise<void> {
       if (report.secret_matches > 0) process.exitCode = 1;
       return;
     }
+    case 'measure': {
+      if (args.length !== 0) throw new UsageError('measure takes no arguments.');
+      print(measure(log));
+      return;
+    }
     case 'keys': {
       const result = generateKeys();
       log(result.written.length > 0 ? `keys: wrote ${result.written.join(', ')}` : `keys: kept the existing ${result.kept.join(', ')}`);
@@ -90,6 +99,6 @@ async function main(argv: string[]): Promise<void> {
 }
 
 main(process.argv.slice(2)).catch((error: unknown) => {
-  log(`${error instanceof UsageError ? 'usage' : 'error'}: ${error instanceof Error ? error.message : String(error)}`);
+  log(`${error instanceof UsageError ? 'usage' : error instanceof MeasureError ? 'measure' : 'error'}: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = error instanceof UsageError ? 2 : 1;
 });

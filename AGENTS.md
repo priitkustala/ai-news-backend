@@ -32,6 +32,7 @@ the host, because the box has no container engine. `<compose>` stands for
 | Seed a fixture set | box | `node dist/cli.js seed <fixture-set> <run-marker>` |
 | Development sign-in | box | `node dist/cli.js sign-in owner` (or `second-user`) |
 | Run the job | box | `node dist/cli.js ingest <YYYY-MM-DD> [--dry-run]` |
+| Measure feed quality (priitkustala/ai-news-backend#4) | box | `node dist/cli.js measure` (runs the pipeline on the frozen sample and labels under `fixtures/validation-sample/` and the hostile fixtures under `fixtures/validation/`; prints the measurement report, values only, no verdict while OD-26 is open) |
 | Scoped scenarios | box | `cd e2e && npx playwright test --project=api --grep "@story-40"` |
 | One scenario | box | `cd e2e && npx playwright test --project=api tests/bootstrap/40-40-a-gateway-answers.spec.ts` |
 | Unit and integration tests | - | none yet: no unit-tested module exists; the first feature story adds the runner as an approved dependency |
