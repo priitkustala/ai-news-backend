@@ -12,6 +12,7 @@ import { SourceFailure } from '../collect/fetch.js';
 import { processEntries, type ItemToStore, type ProcessSource } from '../ingest/process.js';
 import { canonicalUrl, clusterItems } from '../process/dedupe.js';
 import { CATEGORIES, type Category } from '../process/category-rules.js';
+import { entryErrors, inputErrors, itemErrors, labelErrors, type RecordKind } from './schema.js';
 import { MeasureError, readHostile, readLabels, readSample, type RawRecord, type Sample, type SampleSource } from './sample.js';
 
 export type Unavailable = { value: null; unavailable_reason: string };
@@ -25,6 +26,7 @@ const share = (count: number, of: number, reason: string): Share => (of > 0 ? co
 export type Outcome = 'kept' | 'not-relevant' | 'dropped' | 'not-in-sample';
 export type Fixture = {
   record: RawRecord;
+  kind: RecordKind;
   source_id: string;
   outcome: Outcome;
   entry: FeedEntry | null;
@@ -34,15 +36,21 @@ export type Fixture = {
 
 export type Labelled = { ai_relevant: boolean; category: Category; duplicate_group: string | null };
 
-const isCategory = (value: unknown): value is Category => typeof value === 'string' && (CATEGORIES as readonly string[]).includes(value);
+// The labels of a record that passed labelErrors (src/measure/schema.ts).
+const labelsOf = (record: RawRecord): Labelled => {
+  const labels = record.labels as Record<string, unknown>;
+  return { ai_relevant: labels.ai_relevant as boolean, category: labels.category as Category, duplicate_group: (labels.duplicate_group as string | undefined) ?? null };
+};
 
-// The labels of a record when they have the label shape, else null (not scored).
-export function labelsOf(record: RawRecord): Labelled | null {
-  const labels = record.labels as Record<string, unknown> | null | undefined;
-  if (!labels || typeof labels !== 'object') return null;
-  const group = labels.duplicate_group ?? null;
-  if (typeof labels.ai_relevant !== 'boolean' || !isCategory(labels.category) || (group !== null && typeof group !== 'string')) return null;
-  return { ai_relevant: labels.ai_relevant, category: labels.category, duplicate_group: group };
+// The schema validation of one fixture record and the record it yields (src/measure/schema.ts).
+function validate(f: Fixture, duplicateIds: Set<string>) {
+  const schemaErrors = [
+    ...inputErrors(f.record, f.kind, duplicateIds.has(String(f.record.fixture_id))),
+    ...entryErrors(f.entry),
+    ...(f.item ? itemErrors(f.item, f.source_id) : []),
+  ];
+  const labelErrorList = labelErrors(f.record, f.item);
+  return { schema_valid: schemaErrors.length === 0, labels_from_fixed_lists: labelErrorList.length === 0, errors: [...schemaErrors, ...labelErrorList] };
 }
 
 const xml = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -120,7 +128,7 @@ export function measure(log: (line: string) => void): MeasureReport {
   const bySource = new Map(processed.map((p) => [p.source.id, p]));
   const sampleFixtures: Fixture[] = labels.records.map((record) => {
     const sourceId = String(record.source_id ?? '');
-    return { record, source_id: sourceId, cluster_id: null, ...outcomeOf(typeof record.link === 'string' ? record.link : null, bySource.get(sourceId)) };
+    return { record, kind: 'sample' as const, source_id: sourceId, cluster_id: null, ...outcomeOf(typeof record.link === 'string' ? record.link : null, bySource.get(sourceId)) };
   });
 
   const hostileAt = new Date(sample.window.end - 3600 * 1000);
@@ -128,7 +136,7 @@ export function measure(log: (line: string) => void): MeasureReport {
   const hostileFixtures: Fixture[] = hostileIds.flatMap((id) => {
     const own = hostile.filter((f) => (typeof f.source_id === 'string' && f.source_id !== '' ? f.source_id : 'fixture-hostile') === id);
     const result = run(hostileSource(id), hostileFeed(own, hostileAt));
-    return own.map((record) => ({ record, source_id: id, cluster_id: null, ...outcomeOf(hostileLink(record.fixture_id), result) }));
+    return own.map((record) => ({ record, kind: 'hostile' as const, source_id: id, cluster_id: null, ...outcomeOf(hostileLink(record.fixture_id), result) }));
   });
 
   // the duplicate clusters of the kept sample items (src/process/apply.ts: the publication
@@ -144,8 +152,14 @@ export function measure(log: (line: string) => void): MeasureReport {
   })));
   for (const f of kept) f.cluster_id = marks.get(f.item!.id)!.cluster_id;
 
-  // the metrics over the sample items whose labels have the label shape
-  const scored = sampleFixtures.map((f) => ({ ...f, labels: labelsOf(f.record) })).filter((f) => f.labels !== null && f.outcome !== 'not-in-sample');
+  // every fixture record validated; the metrics count the sample records that pass both checks
+  const fixtures = [...sampleFixtures, ...hostileFixtures];
+  const seen = new Map<string, number>();
+  for (const f of fixtures) seen.set(String(f.record.fixture_id), (seen.get(String(f.record.fixture_id)) ?? 0) + 1);
+  const duplicateIds = new Set([...seen].filter(([, count]) => count > 1).map(([id]) => id));
+  const checks = new Map(fixtures.map((f) => [f, validate(f, duplicateIds)]));
+  const scored = sampleFixtures.filter((f) => checks.get(f)!.schema_valid && checks.get(f)!.labels_from_fixed_lists)
+    .map((f) => ({ ...f, labels: labelsOf(f.record) }));
   const keptScored = scored.filter((f) => f.item !== null);
   const relevant = scored.filter((f) => f.labels!.ai_relevant);
   const keptRelevant = keptScored.filter((f) => f.labels!.ai_relevant);
@@ -179,9 +193,9 @@ export function measure(log: (line: string) => void): MeasureReport {
     return [source.id, share(own.filter((f) => f.item!.summary !== null).length, own.length, `no item of ${source.id} is kept by the pipeline`)];
   }));
 
-  const fixtures = [...sampleFixtures, ...hostileFixtures];
+  const invalid = fixtures.filter((f) => !checks.get(f)!.schema_valid || !checks.get(f)!.labels_from_fixed_lists).length;
   log(`measure: sample ${sample.sample_id}: ${sample.sources.length} sources, ${sampleFixtures.length} labelled items, `
-    + `${kept.length} kept, ${representatives.length} clusters; ${hostileFixtures.length} hostile fixtures; label origin ${labels.label_origin}`);
+    + `${kept.length} kept, ${representatives.length} clusters; ${hostileFixtures.length} hostile fixtures; label origin ${labels.label_origin}; ${invalid} fixture records fail validation`);
   if (labels.label_origin !== 'owner') log('measure: the labels are not the owner\'s labels: the values do not claim feed quality');
 
   const TOP_N = 'the sample carries no must-read or skip label (B-25: the owner labels importance; the fixture labels carry relevance, '
@@ -215,6 +229,7 @@ export function measure(log: (line: string) => void): MeasureReport {
       duplicate_pairs_labelled: pairs.labelled,
       duplicate_pairs_both: pairs.both,
       hostile_fixtures: hostileFixtures.length,
+      fixtures_failing_validation: invalid,
     },
     fixtures: fixtures.map((f) => ({
       fixture_id: String(f.record.fixture_id),
@@ -224,6 +239,9 @@ export function measure(log: (line: string) => void): MeasureReport {
       category: f.item?.category ?? null,
       category_method: f.item?.category_method ?? null,
       cluster_id: f.cluster_id,
+      schema_valid: checks.get(f)!.schema_valid,
+      labels_from_fixed_lists: checks.get(f)!.labels_from_fixed_lists,
+      ...(checks.get(f)!.errors.length > 0 ? { errors: checks.get(f)!.errors } : {}),
     })),
   };
 }
