@@ -18,6 +18,7 @@ import { UsageError } from '../env.js';
 import { inTransaction, withClient, type Client } from '../db.js';
 import { collect, type CollectSource } from '../collect/collect.js';
 import { processEntries, PROCESSING_VERSION, type ItemToStore } from './process.js';
+import { storeOtherShare } from './other-share.js';
 
 export type RunReport = {
   run_id: string | null;
@@ -199,6 +200,8 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
             );
             inserted += result.rowCount ?? 0;
           }
+          // B-06: the Other share over the 7 days up to this write, stored with the run.
+          await storeOtherShare(client, runId, null);
           await client.query(
             'update public.ingestion_runs set status = $2, ended_at = now(), counts = $3, source_errors = $4 where id = $1',
             [runId, done.status, JSON.stringify(countsOf(done, inserted)), JSON.stringify(done.sourceErrors)],
