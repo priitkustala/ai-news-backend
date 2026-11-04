@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed A of a later-run copy (fixture)</title>
+    <link>https://example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}}-kept-copy synthetic note on model evaluations (copy A)</title><link>https://example.com/ai-news-fixture/{{run}}-kept-copy</link><description>Copy A, from the lower-weight source.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://example.com/ai-news-fixture/{{run}}-kept-copy</guid></item>
+  </channel>
+</rss>

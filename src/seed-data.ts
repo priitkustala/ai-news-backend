@@ -5,6 +5,7 @@
 // base seed plus that set. Feeds a later run reads are served by the fixture feed server
 // (fixtures/server.mjs), addressed with the run marker so their content carries it.
 import { createHash } from 'node:crypto';
+import { ARXIV_DAILY_CAP } from './process/rank-weights.js';
 
 export type Category = 'releases' | 'research' | 'policy' | 'business' | 'other';
 export const CATEGORY_NAMES: Record<Category, string> = {
@@ -24,6 +25,8 @@ export type SourceRow = {
   default_categories?: Category[];
   image_policy?: 'licensed' | 'owner-accepted hotlink' | 'placeholder';
   display_policy?: 'title-link' | 'feed-summary';
+  // The configured source weight (B-07, B-08); the column's default 1 when absent.
+  source_weight?: number;
 };
 
 export type ItemRow = {
@@ -200,8 +203,9 @@ function withPolicy(set: FixtureSet, row: ItemRow): string {
   return set.sources.find((s) => s.id === row.source_id)?.image_policy ?? 'placeholder';
 }
 
-// The cap the fixture's local configuration uses for AC-08 (B-08; the real starting value is OD-26).
-export const ARXIV_DAILY_CAP_FIXTURE = 10;
+// The cap the fixture's local configuration uses for AC-08: the configured cap of the job
+// (src/process/rank-weights.ts; B-08; the real starting value is OD-26).
+export const ARXIV_DAILY_CAP_FIXTURE = ARXIV_DAILY_CAP;
 const ARXIV_SEEDED_FOR_DAY = 25;
 const OLD = 3 * 365 * DAY; // older than any retention window OD-20 can choose
 
@@ -289,6 +293,14 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
       arxiv_source_id: 'arxiv-cs-ai',
     }),
   }),
+  // Review finding F-S04-1 of backend#3 (S-04 round 1): a copy of a stored item arriving in a
+  // later run competes with the stored copy under B-07. Both sets store copy A of
+  // <run>-later-copy as a completed run of yesterday left it; today's run delivers copy B.
+  // F-S04-1a: B weighs 2 and A 1, and B's copy is the later one, so the weight decides; A's feed
+  // also delivers an earlier copy of <run>-kept-copy, whose stored copy is B's: that copy loses.
+  // F-S04-1b: equal weights, and B's copy is the earlier one, so the time decides.
+  'F-S04-1a': (ctx) => laterRunCopies(ctx, 2, ctx.now),
+  'F-S04-1b': (ctx) => laterRunCopies(ctx, 1, new Date(ctx.now.getTime() - 3 * HOUR)),
   'AC-15c': (ctx, set) => ({ items: markedItems(ctx, set, ['-a']) }),
   'AC-15d': (ctx, set) => ({ items: markedItems(ctx, set, ['-a']) }),
   'AC-20a': (ctx, set) => ({ items: markedItems(ctx, set, ['-a', '-b']) }),
@@ -522,5 +534,32 @@ function threeCategories(ctx: SeedContext, set: FixtureSet): Extra {
     items,
     adjust: (all) => { all.items = all.items.filter((row) => ['releases', 'policy', 'business'].includes(row.category)); },
     manifest: (all) => ({ policy_titles: all.items.filter((row) => row.category === 'policy').map((row) => row.title) }),
+  };
+}
+
+// The sets of review finding F-S04-1 (above). Feed times are whole seconds, as RFC 822 carries them.
+function laterRunCopies(ctx: SeedContext, weightB: number, copyBAt: Date): Extra {
+  const second = (date: Date) => new Date(Math.floor(date.getTime() / 1000) * 1000);
+  const copyB = second(copyBAt);
+  const copyAAt = second(new Date(ctx.now.getTime() - 4 * HOUR));
+  const a = source('fixture-later-a', 'Fixture feed A of a later-run copy', fixtureFeed(ctx, 'later-run-a.xml', { at: copyAAt.toISOString() }));
+  const b = source('fixture-later-b', 'Fixture feed B of a later-run copy', fixtureFeed(ctx, 'later-run-b.xml', { at: copyB.toISOString() }),
+    { source_weight: weightB });
+  const stored = item(a, `${ctx.run}-later-copy`, `${ctx.run}-later-copy synthetic AI story (copy A)`, 'releases', ago(ctx, HOUR));
+  const kept = item(b, `${ctx.run}-kept-copy`, `${ctx.run}-kept-copy synthetic note on model evaluations (copy B)`, 'research', ago(ctx, HOUR));
+  const yesterday = new Date(ctx.now.getTime() - DAY);
+  return {
+    sources: [a, b],
+    items: weightB > 1 ? [stored, kept] : [stored],
+    runs: [{ run_date: isoDate(yesterday), status: 'completed', started_at: yesterday.toISOString(), ended_at: yesterday.toISOString() }],
+    manifest: () => ({
+      earlier_run_date: isoDate(yesterday),
+      stored_source_id: a.id,
+      later_source_id: b.id,
+      later_copy_url: stored.canonical_url,
+      later_copy_item_id: stored.id,
+      later_copy_published_at: copyB.toISOString(),
+      ...(weightB > 1 ? { kept_copy_url: kept.canonical_url, kept_copy_item_id: kept.id } : {}),
+    }),
   };
 }
