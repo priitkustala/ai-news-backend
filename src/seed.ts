@@ -19,10 +19,10 @@ export async function loadSet(client: Client, set: FixtureSet, windowEnd: Date =
     await client.query('delete from app_private.sources');
     for (const s of set.sources) {
       await client.query(
-        `insert into app_private.sources (id, name, feed_url, source_type, community, default_categories, image_policy, display_policy)
-         values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        `insert into app_private.sources (id, name, feed_url, source_type, community, default_categories, image_policy, display_policy, source_weight)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [s.id, s.name, s.feed_url, s.source_type ?? 'feed', s.community ?? null, s.default_categories ?? [],
-          s.image_policy ?? 'placeholder', s.display_policy ?? 'title-link'],
+          s.image_policy ?? 'placeholder', s.display_policy ?? 'title-link', s.source_weight ?? 1],
       );
     }
     for (const i of set.items) {

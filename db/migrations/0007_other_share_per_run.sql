@@ -2,7 +2,7 @@
 -- round 2; Locked B-06; OD-15; owner decision of 2026-11-04 on Astra's finding F-S03-3:
 -- "Follow the spec: job computes and stores per run").
 --
--- 0005 computed the share when the categories view was read; B-06 says the job computes it.
+-- 0006 computed the share when the categories view was read; B-06 says the job computes it.
 -- Each run now stores, with its own record, the share over the window of OD-15 ending at the
 -- run: representative processed items whose publication time (or, without one, fetch time)
 -- lies in (window end - 7 days, window end]. The upper bound keeps future-dated items (such
@@ -19,8 +19,10 @@
 -- the owner predicate, its grants and its read-only trigger (0002); ingestion_runs keeps its
 -- owner-only read policy and the job's grants, which cover the new columns.
 --
--- A new migration, not an amended 0005: 0005 was already applied by this branch's instance
--- before the repair, and the runner applies each file once.
+-- A new migration, not an amended 0006: 0006 (numbered 0005 then) was already applied by this
+-- branch's instance before the repair, and the runner applies each file once. Both were
+-- renumbered at the merge of main (S-04's 0005_feed_one_per_cluster.sql; owner, 2026-11-04);
+-- they replace only the categories view and leave S-04's feed view as 0005 defines it.
 
 alter table public.ingestion_runs
   add column other_share_window_end timestamptz,

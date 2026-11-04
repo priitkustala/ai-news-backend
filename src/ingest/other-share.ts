@@ -1,5 +1,5 @@
 // The Other share of a run (priitkustala/ai-news-backend#2, S-03; Locked B-06, OD-15;
-// db/migrations/0006_other_share_per_run.sql). The job computes it at the end of each run and
+// db/migrations/0007_other_share_per_run.sql). The job computes it at the end of each run and
 // stores it with the run; the seed stores it the same way for a seeded window. The window is
 // the 7 days up to and including its end, by an item's publication time or, without one, its
 // fetch time, over representative processed items. The notice compares the exact counts
