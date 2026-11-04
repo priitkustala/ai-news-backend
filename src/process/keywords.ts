@@ -2,13 +2,16 @@
 // Locked B-04, W4 section 6 step 3). Source code, not configuration: a change to either list
 // is a code change reviewed in a pull request (brief 03, Configuration and tripwire files).
 
-// Sources whose whole feed is AI-specific (Locked, News sources and the Anthropic mirror):
-// every item they publish passes. Every other feed source is a general source, whose items
-// pass only on a keyword match. Reddit communities are AI-specific by their admission rule
-// (W10 K1), so a `reddit` source counts as AI-specific by its type (src/process/relevance.ts).
+// Sources whose whole feed is AI-specific: every item they publish passes. Every other feed
+// source is a general source, whose items pass only on a keyword match. Reddit communities are
+// AI-specific by their admission rule (W10 K1), so a `reddit` source counts as AI-specific by
+// its type (src/process/relevance.ts).
+//
+// The active production sources (Locked, News sources: the 11 proposed feeds and the
+// Anthropic mirror) whose whole feed is AI-specific, exactly. The three other active sources
+// are general: simon-willison (everything feed), google-research-blog and Tech Policy Press.
 export const AI_SOURCE_IDS: readonly string[] = [
   'anthropic-news-mirror',
-  'arxiv-cs-ai',
   'deepmind-blog',
   'eu-ai-act-newsletter',
   'federal-register-ai',
@@ -18,6 +21,13 @@ export const AI_SOURCE_IDS: readonly string[] = [
   'openai-news',
   'techcrunch-ai',
 ];
+
+// Not an active source: arXiv cs.AI is an excluded candidate of the locked source list (FAILED
+// in the snapshot, removed by the owner's decision of 2026-10-11, row Feed drift). Its id is
+// kept only for the local fixture of AC-08 (the arXiv daily cap, B-08), whose fixture feed
+// is AI-specific as a whole. Listing it here enables or fetches nothing: sources come from the
+// source configuration, and re-admitting arXiv is the owner's decision.
+export const FIXTURE_AI_SOURCE_IDS: readonly string[] = ['arxiv-cs-ai'];
 
 // A keyword matches as a whole word or phrase (no letter or digit directly before or after
 // it). Acronyms match in their written case only, so `AI` never matches "ai" inside a run

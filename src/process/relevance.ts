@@ -4,7 +4,7 @@
 // other item is not kept. The title is what a headline is about; a summary is absent for
 // many sources (title-link display, feeds without summaries), so matching it would make the
 // rule differ by source. The method that kept an item is stored as `relevance_method`.
-import { AI_KEYWORDS, AI_SOURCE_IDS, type Keyword } from './keywords.js';
+import { AI_KEYWORDS, AI_SOURCE_IDS, FIXTURE_AI_SOURCE_IDS, type Keyword } from './keywords.js';
 
 export type RelevanceMethod = 'source' | 'keyword';
 
@@ -26,7 +26,7 @@ export function matcher(keywords: readonly Keyword[]): (text: string) => boolean
   return (text) => Boolean(sensitive?.test(text) || insensitive?.test(text));
 }
 
-const aiSources = new Set(AI_SOURCE_IDS);
+const aiSources = new Set([...AI_SOURCE_IDS, ...FIXTURE_AI_SOURCE_IDS]);
 const matchesAiKeyword = matcher(AI_KEYWORDS);
 
 export function isAiSource(source: RelevanceSource): boolean {
