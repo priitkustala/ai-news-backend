@@ -6,8 +6,8 @@
 // source is collected on its own (module collect); the run ends `completed`, `partial` when
 // some sources failed, or `failed` when every source failed, and stored items are never
 // removed. In the same transaction as the run's new items, every stored item is clustered
-// again with the earlier ones (S-04, src/process/apply.ts), so the `feed` view shows one
-// representative per cluster. With --dry-run it fetches and processes and writes nothing. A session advisory
+// again with the earlier ones, scored, and the arXiv items beyond the daily cap marked (S-04,
+// src/process/apply.ts), so the `feed` view shows one representative per cluster by score. With --dry-run it fetches and processes and writes nothing. A session advisory
 // lock per run date keeps two starts of the same date from running at once. If the run's own
 // writes fail after it started, they are rolled back and the run is recorded `failed` with a
 // safe error (counts.run_error; the command exits 1); if even that record is refused, the
@@ -21,7 +21,7 @@ import { inTransaction, withClient, type Client } from '../db.js';
 import { collect, type CollectSource } from '../collect/collect.js';
 import { processEntries, PROCESSING_VERSION, type ItemToStore } from './process.js';
 import { representativeOrder } from '../process/dedupe.js';
-import { applyProcessing } from '../process/apply.js';
+import { applyProcessing, type ProcessingCounts } from '../process/apply.js';
 
 export type RunReport = {
   run_id: string | null;
@@ -122,11 +122,11 @@ async function collectAndProcess(sources: Source[], log: (line: string) => void)
   return { status, items, sourceErrors, requests: collected.requests, fetched, dropped, feeds, skipped: collected.skipped.length };
 }
 
-function countsOf(work: Awaited<ReturnType<typeof collectAndProcess>>, added: number, clusters?: { clusters: number; hidden: number }) {
+function countsOf(work: Awaited<ReturnType<typeof collectAndProcess>>, added: number, processing?: ProcessingCounts) {
   return {
     sources: work.feeds, sources_failed: work.sourceErrors.length, sources_skipped: work.skipped,
     fetched: work.fetched, processed: work.items.length, dropped: work.dropped, added,
-    ...(clusters ? { clusters: clusters.clusters, duplicates_not_shown: clusters.hidden } : {}),
+    ...(processing ? { clusters: processing.clusters, duplicates_not_shown: processing.hidden, arxiv_capped: processing.arxiv_capped } : {}),
   };
 }
 

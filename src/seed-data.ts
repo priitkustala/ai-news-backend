@@ -5,6 +5,7 @@
 // base seed plus that set. Feeds a later run reads are served by the fixture feed server
 // (fixtures/server.mjs), addressed with the run marker so their content carries it.
 import { createHash } from 'node:crypto';
+import { ARXIV_DAILY_CAP } from './process/rank-weights.js';
 
 export type Category = 'releases' | 'research' | 'policy' | 'business' | 'other';
 export const CATEGORY_NAMES: Record<Category, string> = {
@@ -200,8 +201,9 @@ function withPolicy(set: FixtureSet, row: ItemRow): string {
   return set.sources.find((s) => s.id === row.source_id)?.image_policy ?? 'placeholder';
 }
 
-// The cap the fixture's local configuration uses for AC-08 (B-08; the real starting value is OD-26).
-export const ARXIV_DAILY_CAP_FIXTURE = 10;
+// The cap the fixture's local configuration uses for AC-08: the configured cap of the job
+// (src/process/rank-weights.ts; B-08; the real starting value is OD-26).
+export const ARXIV_DAILY_CAP_FIXTURE = ARXIV_DAILY_CAP;
 const ARXIV_SEEDED_FOR_DAY = 25;
 const OLD = 3 * 365 * DAY; // older than any retention window OD-20 can choose
 
