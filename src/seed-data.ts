@@ -5,6 +5,7 @@
 // base seed plus that set. Feeds a later run reads are served by the fixture feed server
 // (fixtures/server.mjs), addressed with the run marker so their content carries it.
 import { createHash } from 'node:crypto';
+import { ARXIV_DAILY_CAP } from './process/rank-weights.js';
 
 export type Category = 'releases' | 'research' | 'policy' | 'business' | 'other';
 export const CATEGORY_NAMES: Record<Category, string> = {
@@ -24,6 +25,8 @@ export type SourceRow = {
   default_categories?: Category[];
   image_policy?: 'licensed' | 'owner-accepted hotlink' | 'placeholder';
   display_policy?: 'title-link' | 'feed-summary';
+  // The configured source weight (B-07, B-08); the column's default 1 when absent.
+  source_weight?: number;
 };
 
 export type ItemRow = {
@@ -31,7 +34,10 @@ export type ItemRow = {
   canonical_url: string;
   source_id: string;
   title: string;
-  published_at: string;
+  // null: the feed gave no publication time (the window then counts the fetch time).
+  published_at: string | null;
+  // The fetch time; when absent the database records the seed time.
+  fetched_at?: string;
   image_url: string | null;
   summary: string | null;
   category: Category;
@@ -200,8 +206,9 @@ function withPolicy(set: FixtureSet, row: ItemRow): string {
   return set.sources.find((s) => s.id === row.source_id)?.image_policy ?? 'placeholder';
 }
 
-// The cap the fixture's local configuration uses for AC-08 (B-08; the real starting value is OD-26).
-export const ARXIV_DAILY_CAP_FIXTURE = 10;
+// The cap the fixture's local configuration uses for AC-08: the configured cap of the job
+// (src/process/rank-weights.ts; B-08; the real starting value is OD-26).
+export const ARXIV_DAILY_CAP_FIXTURE = ARXIV_DAILY_CAP;
 const ARXIV_SEEDED_FOR_DAY = 25;
 const OLD = 3 * 365 * DAY; // older than any retention window OD-20 can choose
 
@@ -264,13 +271,13 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   'AC-04': (ctx) => ({ sources: [source('fixture-general', 'Fixture general news feed', fixtureFeed(ctx, 'general.xml'))] }),
   'AC-05': (ctx) => ({ sources: [source('fixture-categories', 'Fixture feed for the category rules', fixtureFeed(ctx, 'categories.xml'))] }),
   'AC-06': (ctx, set) => {
-    // Today's window holds 10 representative items, 4 of them in Other; the base items are
-    // moved out of the window (OD-15 sets the window and the denominator).
+    // The 7-day window of OD-15 holds 10 representative items, 4 of them in Other; the base
+    // items are moved out of the window (8 days back).
     const plan: Category[] = ['other', 'other', 'other', 'other', 'releases', 'releases', 'policy', 'policy', 'business', 'business'];
     return {
       items: plan.map((category, index) =>
         item(src(set, 'techcrunch-ai'), `${ctx.run}-window-${index}`, `${ctx.run}-window-${index} synthetic headline`, category, ago(ctx, (index + 1) * HOUR))),
-      adjust: (all) => { for (const row of all.items) if (!row.title.startsWith(ctx.run)) row.published_at = ago(ctx, 3 * DAY); },
+      adjust: (all) => { for (const row of all.items) if (!row.title.startsWith(ctx.run)) row.published_at = ago(ctx, 8 * DAY); },
     };
   },
   'AC-07a': (ctx) => ({ sources: [source('fixture-same-url', 'Fixture feed with utm variants', fixtureFeed(ctx, 'same-url.xml'))] }),
@@ -289,6 +296,14 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
       arxiv_source_id: 'arxiv-cs-ai',
     }),
   }),
+  // Review finding F-S04-1 of backend#3 (S-04 round 1): a copy of a stored item arriving in a
+  // later run competes with the stored copy under B-07. Both sets store copy A of
+  // <run>-later-copy as a completed run of yesterday left it; today's run delivers copy B.
+  // F-S04-1a: B weighs 2 and A 1, and B's copy is the later one, so the weight decides; A's feed
+  // also delivers an earlier copy of <run>-kept-copy, whose stored copy is B's: that copy loses.
+  // F-S04-1b: equal weights, and B's copy is the earlier one, so the time decides.
+  'F-S04-1a': (ctx) => laterRunCopies(ctx, 2, ctx.now),
+  'F-S04-1b': (ctx) => laterRunCopies(ctx, 1, new Date(ctx.now.getTime() - 3 * HOUR)),
   'AC-15c': (ctx, set) => ({ items: markedItems(ctx, set, ['-a']) }),
   'AC-15d': (ctx, set) => ({ items: markedItems(ctx, set, ['-a']) }),
   'AC-20a': (ctx, set) => ({ items: markedItems(ctx, set, ['-a', '-b']) }),
@@ -336,6 +351,51 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   'AC-27c': (ctx) => ({ sources: [redditSource(ctx, 'artificial')] }),
   'AC-28c': (ctx) => ({ adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = fixtureFeed(ctx, 'mirror.xml'); } }),
   'AC-28d': (ctx) => ({ adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = failing(ctx, 503, 'anthropic-news-mirror'); } }),
+
+  // Repair round 2 of S-03 (Astra round 1 findings on AC-06's Other share; OD-15, B-06).
+  'F-S03-1': (ctx, set) => {
+    // Ten representatives in the window ending at the seed time, four in Other; one has no
+    // publication time and is in the window by its fetch time. Outside it: future-dated items
+    // in Other and elsewhere, and expired ones (by publication time and by fetch time).
+    const plan: Category[] = ['other', 'other', 'other', 'other', 'releases', 'releases', 'policy', 'policy', 'business', 'business'];
+    const items = windowItems(ctx, set, plan);
+    items[9] = { ...items[9], published_at: null, fetched_at: ago(ctx, 2 * HOUR) };
+    const tc = src(set, 'techcrunch-ai');
+    const outside = (slug: string, category: Category, at: number, fetched?: number) => {
+      const row = item(tc, `${ctx.run}-${slug}`, `${ctx.run}-${slug} synthetic headline`, category, ago(ctx, at));
+      return fetched === undefined ? row : { ...row, published_at: null, fetched_at: ago(ctx, fetched) };
+    };
+    return {
+      items: [
+        ...items,
+        outside('future-other-1', 'other', -DAY), outside('future-other-2', 'other', -3 * DAY), outside('future-policy', 'policy', -2 * DAY),
+        outside('expired-other', 'other', 8 * DAY), outside('expired-releases', 'releases', 9 * DAY),
+        outside('expired-fetched-other', 'other', 0, 8 * DAY),
+      ],
+      adjust: outOfWindow(ctx),
+    };
+  },
+  'F-S03-2-exact': (ctx, set) => shareWindow(ctx, set, 3, 10),
+  'F-S03-2-above': (ctx, set) => shareWindow(ctx, set, 1000, 3333),
+  'F-S03-2-below': (ctx, set) => shareWindow(ctx, set, 999, 3333),
+  'F-S03-3': (ctx, set) => {
+    // AC-06's window plus one more Other item that leaves the 7-day window 40 seconds after
+    // the seed time: a share computed when the view is read changes then by itself. The run
+    // dates the scenario uses (yesterday and today) are kept free: the stale run moves back.
+    const plan: Category[] = ['other', 'other', 'other', 'other', 'releases', 'releases', 'policy', 'policy', 'business', 'business'];
+    const leavesAt = new Date(ctx.now.getTime() + 40 * 1000);
+    const leaving = item(src(set, 'techcrunch-ai'), `${ctx.run}-leaving`, `${ctx.run}-leaving synthetic headline`, 'other',
+      new Date(leavesAt.getTime() - 7 * DAY).toISOString());
+    return {
+      items: [...windowItems(ctx, set, plan), leaving],
+      adjust: (all) => {
+        outOfWindow(ctx)(all);
+        const stale = new Date(ctx.now.getTime() - 5 * DAY);
+        all.runs = [{ run_date: isoDate(stale), status: 'completed', started_at: stale.toISOString(), ended_at: stale.toISOString() }];
+      },
+      manifest: () => ({ leaves_window_at: leavesAt.toISOString() }),
+    };
+  },
 
   // ai-news-frontend rows.
   'AC-03a': (ctx) => ({ sources: [source('fixture-hostile-title', 'Fixture feed with a script title', fixtureFeed(ctx, 'hostile-title.xml'))] }),
@@ -509,6 +569,25 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   }),
 };
 
+// Window items on TechCrunch AI titled `<run>-window-<n>`, one per category of the plan, an
+// hour or less apart inside the 7-day window ending at the seed time.
+function windowItems(ctx: SeedContext, set: FixtureSet, plan: Category[]): ItemRow[] {
+  const step = Math.min(HOUR, Math.floor((6 * DAY) / plan.length));
+  return plan.map((category, index) =>
+    item(src(set, 'techcrunch-ai'), `${ctx.run}-window-${index}`, `${ctx.run}-window-${index} synthetic headline`, category, ago(ctx, (index + 1) * step)));
+}
+
+// Moves the base items out of the window (8 days back), as AC-06 does.
+function outOfWindow(ctx: SeedContext): (set: FixtureSet) => void {
+  return (set) => { for (const row of set.items) if (!row.title.startsWith(ctx.run)) row.published_at = ago(ctx, 8 * DAY); };
+}
+
+// F-S03-2: a window of `total` representatives, `other` of them in Other.
+function shareWindow(ctx: SeedContext, set: FixtureSet, other: number, total: number): Extra {
+  const plan = Array.from({ length: total }, (_, index): Category => (index < other ? 'other' : 'business'));
+  return { items: windowItems(ctx, set, plan), adjust: outOfWindow(ctx), manifest: () => ({ window_other: other, window_items: total }) };
+}
+
 // AC-11: items in three categories and none in Research today: the base items outside
 // Releases, Policy and Business are moved out of today.
 function threeCategories(ctx: SeedContext, set: FixtureSet): Extra {
@@ -522,5 +601,32 @@ function threeCategories(ctx: SeedContext, set: FixtureSet): Extra {
     items,
     adjust: (all) => { all.items = all.items.filter((row) => ['releases', 'policy', 'business'].includes(row.category)); },
     manifest: (all) => ({ policy_titles: all.items.filter((row) => row.category === 'policy').map((row) => row.title) }),
+  };
+}
+
+// The sets of review finding F-S04-1 (above). Feed times are whole seconds, as RFC 822 carries them.
+function laterRunCopies(ctx: SeedContext, weightB: number, copyBAt: Date): Extra {
+  const second = (date: Date) => new Date(Math.floor(date.getTime() / 1000) * 1000);
+  const copyB = second(copyBAt);
+  const copyAAt = second(new Date(ctx.now.getTime() - 4 * HOUR));
+  const a = source('fixture-later-a', 'Fixture feed A of a later-run copy', fixtureFeed(ctx, 'later-run-a.xml', { at: copyAAt.toISOString() }));
+  const b = source('fixture-later-b', 'Fixture feed B of a later-run copy', fixtureFeed(ctx, 'later-run-b.xml', { at: copyB.toISOString() }),
+    { source_weight: weightB });
+  const stored = item(a, `${ctx.run}-later-copy`, `${ctx.run}-later-copy synthetic AI story (copy A)`, 'releases', ago(ctx, HOUR));
+  const kept = item(b, `${ctx.run}-kept-copy`, `${ctx.run}-kept-copy synthetic note on model evaluations (copy B)`, 'research', ago(ctx, HOUR));
+  const yesterday = new Date(ctx.now.getTime() - DAY);
+  return {
+    sources: [a, b],
+    items: weightB > 1 ? [stored, kept] : [stored],
+    runs: [{ run_date: isoDate(yesterday), status: 'completed', started_at: yesterday.toISOString(), ended_at: yesterday.toISOString() }],
+    manifest: () => ({
+      earlier_run_date: isoDate(yesterday),
+      stored_source_id: a.id,
+      later_source_id: b.id,
+      later_copy_url: stored.canonical_url,
+      later_copy_item_id: stored.id,
+      later_copy_published_at: copyB.toISOString(),
+      ...(weightB > 1 ? { kept_copy_url: kept.canonical_url, kept_copy_item_id: kept.id } : {}),
+    }),
   };
 }
