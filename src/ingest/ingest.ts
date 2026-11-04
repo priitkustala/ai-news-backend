@@ -47,7 +47,7 @@ const sqlState = (error: unknown) => {
   return typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : undefined;
 };
 
-type Source = CollectSource & { display_policy: string };
+type Source = CollectSource & { display_policy: string; default_categories: string[] | null };
 type RunRow = { id: string; status: string; counts: Record<string, number>; source_errors: RunReport['source_errors'] };
 
 // The advisory lock space of the job: (LOCK_CLASS, days since 1970-01-01 of the run date).
@@ -123,7 +123,7 @@ function countsOf(work: Awaited<ReturnType<typeof collectAndProcess>>, added: nu
 export async function ingest(runDate: string, dryRun: boolean, log: (line: string) => void): Promise<RunReport> {
   return withClient('DATABASE_URL', async (client) => {
     const sources = (await client.query<Source>(
-      'select id, feed_url, source_type, display_policy from app_private.sources where enabled order by id',
+      'select id, feed_url, source_type, display_policy, default_categories from app_private.sources where enabled order by id',
     )).rows;
     log(`ingest: run date ${runDate}, ${sources.length} enabled sources${dryRun ? ', dry run' : ''}`);
 
@@ -191,11 +191,11 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
           for (const item of done.items) {
             const result = await client.query(
               `insert into public.items (id, canonical_url, source_id, title, published_at, summary, summary_method,
-                                         ai_relevant, relevance_method, status, processing_version)
-               values ($1, $2, $3, $4, $5, $6, $7, true, $8, 'processed', $9)
+                                         ai_relevant, relevance_method, category, category_method, status, processing_version)
+               values ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, 'processed', $11)
                on conflict do nothing`,
               [item.id, item.canonical_url, item.source_id, item.title, item.published_at, item.summary,
-                item.summary === null ? null : 'feed', item.relevance_method, PROCESSING_VERSION],
+                item.summary === null ? null : 'feed', item.relevance_method, item.category, item.category_method, PROCESSING_VERSION],
             );
             inserted += result.rowCount ?? 0;
           }

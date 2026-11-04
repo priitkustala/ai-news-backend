@@ -3,16 +3,19 @@
 // without a title or an http(s) link is counted and dropped; the canonical address is the link
 // without its fragment, and the id is its SHA-256 (as in the seed); a source whose display
 // policy is `title-link` keeps no summary. Only AI-relevant entries are kept (B-04,
-// src/process/relevance.ts); the others are counted as not relevant. Duplicates and ranking
-// are later steps (S-04).
+// src/process/relevance.ts); the others are counted as not relevant. Each kept item gets one
+// of the five categories (B-05, src/process/category.ts). Duplicates and ranking are later
+// steps (S-04).
 import { createHash } from 'node:crypto';
 import type { FeedEntry } from '../collect/parse.js';
 import { relevance, type RelevanceMethod } from '../process/relevance.js';
+import { categorise, type CategoryMethod } from '../process/category.js';
+import type { Category } from '../process/category-rules.js';
 
 export const PROCESSING_VERSION = 's-03.1';
 export const SUMMARY_MAX_CHARS = 1000;
 
-export type ProcessSource = { id: string; source_type: string; display_policy: string };
+export type ProcessSource = { id: string; source_type: string; display_policy: string; default_categories: string[] | null };
 
 export type ItemToStore = {
   id: string;
@@ -22,6 +25,8 @@ export type ItemToStore = {
   published_at: string | null;
   summary: string | null;
   relevance_method: RelevanceMethod;
+  category: Category;
+  category_method: CategoryMethod;
 };
 
 function canonical(link: string | null): string | null {
@@ -63,6 +68,7 @@ export function processEntries(source: ProcessSource, entries: FeedEntry[]): { i
       notRelevant += 1;
       continue;
     }
+    const { category, method: categoryMethod } = categorise(source, entry.title);
     const summary = source.display_policy === 'title-link' || !entry.summary ? null : plainText(entry.summary).slice(0, SUMMARY_MAX_CHARS) || null;
     items.push({
       id: createHash('sha256').update(url).digest('hex'),
@@ -72,6 +78,8 @@ export function processEntries(source: ProcessSource, entries: FeedEntry[]): { i
       published_at: timestamp(entry.published),
       summary,
       relevance_method: relevanceMethod,
+      category,
+      category_method: categoryMethod,
     });
   }
   return { items, dropped, notRelevant };
