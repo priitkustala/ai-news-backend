@@ -8,12 +8,26 @@
 # dockerComposeFile, and compose errors on a missing file.
 services:
   workload:
+    environment:
+      # No telemetry, error reporting or feature-flag fetch from the box
+      # (priitkustala/ai-news#69, Anthropic's dev container guidance).
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
     volumes:
       # Team context (front door, testing rules, team memory), read-only. Writes to
       # team memory leave the box only as a reviewed pull request.
       - ../../ai-news-team-context:/workspaces/ai-news-team-context:ro
       # The shared end-to-end testing skill from the host, read-only.
       - ${USERPROFILE:-${HOME}}/.agents/skills/outside-in-e2e-testing:/workspaces/.skills/outside-in-e2e-testing:ro
+      # The box policy (priitkustala/ai-news#69): the project's Claude Code settings,
+      # read-only, at the highest precedence (bypassPermissions with the denials kept).
+      - ./managed-settings.json:/etc/claude-code/managed-settings.json:ro
+      # Claude and Codex state (priitkustala/ai-news#69): unset, the shared external
+      # volumes of docker-compose.yml (repository folder); a story's working copy is
+      # started with AI_NEWS_CLAUDE_VOLUME=instance-claude-config and
+      # AI_NEWS_CODEX_VOLUME=instance-codex-config, its own volumes below. Same
+      # targets as docker-compose.yml, so these entries replace its two.
+      - ${AI_NEWS_CLAUDE_VOLUME:-claude-config}:/home/node/.claude
+      - ${AI_NEWS_CODEX_VOLUME:-codex-config}:/home/node/.codex
 
   # The local test environment (priitkustala/ai-news#40): the seeded PostgreSQL
   # database, the local Supabase interface (Supabase Auth and PostgREST behind the
@@ -179,3 +193,9 @@ networks:
 
 volumes:
   ai-news-db-data: {}
+  # Per-instance Claude and Codex configuration volumes (priitkustala/ai-news#69):
+  # compose-owned, named <project>_instance-claude-config and
+  # <project>_instance-codex-config, deleted by `down -v` with the instance; used
+  # only when the instance variables above select them.
+  instance-claude-config: {}
+  instance-codex-config: {}
