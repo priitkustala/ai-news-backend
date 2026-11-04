@@ -264,13 +264,13 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   'AC-04': (ctx) => ({ sources: [source('fixture-general', 'Fixture general news feed', fixtureFeed(ctx, 'general.xml'))] }),
   'AC-05': (ctx) => ({ sources: [source('fixture-categories', 'Fixture feed for the category rules', fixtureFeed(ctx, 'categories.xml'))] }),
   'AC-06': (ctx, set) => {
-    // Today's window holds 10 representative items, 4 of them in Other; the base items are
-    // moved out of the window (OD-15 sets the window and the denominator).
+    // The 7-day window of OD-15 holds 10 representative items, 4 of them in Other; the base
+    // items are moved out of the window (8 days back).
     const plan: Category[] = ['other', 'other', 'other', 'other', 'releases', 'releases', 'policy', 'policy', 'business', 'business'];
     return {
       items: plan.map((category, index) =>
         item(src(set, 'techcrunch-ai'), `${ctx.run}-window-${index}`, `${ctx.run}-window-${index} synthetic headline`, category, ago(ctx, (index + 1) * HOUR))),
-      adjust: (all) => { for (const row of all.items) if (!row.title.startsWith(ctx.run)) row.published_at = ago(ctx, 3 * DAY); },
+      adjust: (all) => { for (const row of all.items) if (!row.title.startsWith(ctx.run)) row.published_at = ago(ctx, 8 * DAY); },
     };
   },
   'AC-07a': (ctx) => ({ sources: [source('fixture-same-url', 'Fixture feed with utm variants', fixtureFeed(ctx, 'same-url.xml'))] }),
