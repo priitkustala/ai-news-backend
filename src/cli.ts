@@ -8,6 +8,7 @@ import { migrate } from './migrate.js';
 import { seed } from './seed.js';
 import { isPersona, PERSONAS, signIn } from './auth.js';
 import { ingest, parseRunDate } from './ingest/ingest.js';
+import { scanSecrets } from './scan/scan.js';
 
 const USAGE = `Usage: node dist/cli.js <command> [arguments]
 
@@ -15,6 +16,8 @@ Commands of the job and the local test environment:
   ingest <run-date> [--dry-run]     run the ingestion job for a date (YYYY-MM-DD); --dry-run writes nothing
   seed <fixture-set> <run-marker>   reset the local database to the base seed plus a fixture set
   sign-in <persona>                 development sign-in of a seeded persona (${PERSONAS.join(', ')}); prints its access token
+  scan-secrets <path>...            scan a repository, a folder or a file for this stack's seeded secrets
+                                    (counts and pattern names only) and the key kinds a built client carries
 
 Set-up of the local test environment:
   keys                              generate this stack's local keys into the git-ignored .env files (once)
@@ -22,6 +25,7 @@ Set-up of the local test environment:
 
 Exit status: 0 done; 1 failed (for ingest: the run could not finish its writes); 2 usage;
 3 ingest: the run is persisted as reported, but a read for the report failed after the commit.
+scan-secrets exits 1 when it finds a seeded secret (the report is printed first).
 `;
 
 const print = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -56,6 +60,12 @@ async function main(argv: string[]): Promise<void> {
       const [persona] = args;
       if (args.length !== 1 || !isPersona(persona)) throw new UsageError(`sign-in takes one persona: ${PERSONAS.join(' or ')}.`);
       print({ access_token: await signIn(persona) });
+      return;
+    }
+    case 'scan-secrets': {
+      const report = scanSecrets(args, process.env, log);
+      print(report);
+      if (report.secret_matches > 0) process.exitCode = 1;
       return;
     }
     case 'keys': {
