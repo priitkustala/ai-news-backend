@@ -8,6 +8,8 @@ import { migrate } from './migrate.js';
 import { seed } from './seed.js';
 import { isPersona, PERSONAS, signIn } from './auth.js';
 import { ingest, parseRunDate } from './ingest/ingest.js';
+import { measure } from './measure/measure.js';
+import { MeasureError } from './measure/sample.js';
 
 const USAGE = `Usage: node dist/cli.js <command> [arguments]
 
@@ -15,12 +17,14 @@ Commands of the job and the local test environment:
   ingest <run-date> [--dry-run]     run the ingestion job for a date (YYYY-MM-DD); --dry-run writes nothing
   seed <fixture-set> <run-marker>   reset the local database to the base seed plus a fixture set
   sign-in <persona>                 development sign-in of a seeded persona (${PERSONAS.join(', ')}); prints its access token
+  measure                           run the pipeline on the frozen validation sample (fixtures/validation-sample/) and print
+                                    the measurement report: values only, no verdict (OD-26)
 
 Set-up of the local test environment:
   keys                              generate this stack's local keys into the git-ignored .env files (once)
   migrate                           apply the migrations, create the personas and load the base seed (safe to run again)
 
-Exit status: 0 done; 1 failed (for ingest: the run could not finish its writes); 2 usage;
+Exit status: 0 done; 1 failed (for ingest: the run could not finish its writes; for measure: the sample cannot be measured); 2 usage;
 3 ingest: the run is persisted as reported, but a read for the report failed after the commit.
 `;
 
@@ -58,6 +62,11 @@ async function main(argv: string[]): Promise<void> {
       print({ access_token: await signIn(persona) });
       return;
     }
+    case 'measure': {
+      if (args.length !== 0) throw new UsageError('measure takes no arguments.');
+      print(measure(log));
+      return;
+    }
     case 'keys': {
       const result = generateKeys();
       log(result.written.length > 0 ? `keys: wrote ${result.written.join(', ')}` : `keys: kept the existing ${result.kept.join(', ')}`);
@@ -73,6 +82,6 @@ async function main(argv: string[]): Promise<void> {
 }
 
 main(process.argv.slice(2)).catch((error: unknown) => {
-  log(`${error instanceof UsageError ? 'usage' : 'error'}: ${error instanceof Error ? error.message : String(error)}`);
+  log(`${error instanceof UsageError ? 'usage' : error instanceof MeasureError ? 'measure' : 'error'}: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = error instanceof UsageError ? 2 : 1;
 });

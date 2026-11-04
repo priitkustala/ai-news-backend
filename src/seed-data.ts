@@ -6,6 +6,7 @@
 // (fixtures/server.mjs), addressed with the run marker so their content carries it.
 import { createHash } from 'node:crypto';
 import { ARXIV_DAILY_CAP } from './process/rank-weights.js';
+import { fixtureManifest } from './measure/sample.js';
 
 export type Category = 'releases' | 'research' | 'policy' | 'business' | 'other';
 export const CATEGORY_NAMES: Record<Category, string> = {
@@ -333,12 +334,11 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
     ],
   }),
   'AC-25': () => ({
-    // The seeded injection and malformed fixtures (fixtures/validation/hostile.json). The frozen
-    // sample with the owner's labels is added by S-06 when the owner has labelled it (B-25).
-    manifest: () => ({
-      fixture_ids: ['hostile-injection-instructions', 'hostile-malformed-markup'],
-      source_ids: ['fixture-hostile'],
-    }),
+    // The frozen validation sample with its labels (fixtures/validation-sample/, S-06; fixture
+    // labels until the owner labels a sample, B-25) and the seeded injection and malformed
+    // fixtures (fixtures/validation/hostile.json): every fixture record of the set and the
+    // sample's sources, read from those files, which the measure command reads (src/measure/).
+    manifest: () => fixtureManifest(),
   }),
   'AC-26c': (ctx) => {
     const reddit = redditSource(ctx, 'artificial', { omit: 'admitted' });
