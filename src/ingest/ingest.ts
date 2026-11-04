@@ -7,8 +7,9 @@
 // some sources failed, or `failed` when every source failed, and stored items are never
 // removed. In the same transaction as the run's new items, every stored item is clustered
 // again with the earlier ones, scored, and the arXiv items beyond the daily cap marked (S-04,
-// src/process/apply.ts), so the `feed` view shows one representative per cluster by score. With --dry-run it fetches and processes and writes nothing. A session advisory
-// lock per run date keeps two starts of the same date from running at once. If the run's own
+// src/process/apply.ts), so the `feed` view shows one representative per cluster by score.
+// With --dry-run it fetches and processes and writes nothing. A session advisory lock per run
+// date keeps two starts of the same date from running at once. If the run's own
 // writes fail after it started, they are rolled back and the run is recorded `failed` with a
 // safe error (counts.run_error; the command exits 1); if even that record is refused, the
 // command says so and exits 1 without a run report. A read that fails after the run's writes
