@@ -5,10 +5,13 @@
 import { requireEnv, UsageError } from './env.js';
 import { inTransaction, withClient, type Client } from './db.js';
 import { fixtureSet, fixtureSetNames, type FixtureSet } from './seed-data.js';
+import { latestRunId, storeOtherShare } from './ingest/other-share.js';
 
 const RUN_MARKER = /^[A-Za-z0-9][A-Za-z0-9-]{0,62}$/;
 
-export async function loadSet(client: Client, set: FixtureSet): Promise<void> {
+// The seeded window's Other share is stored on the set's latest completed run, the way a run
+// stores its own, with `windowEnd` (the time the set was built at) as the window's end.
+export async function loadSet(client: Client, set: FixtureSet, windowEnd: Date = new Date()): Promise<void> {
   await inTransaction(client, async () => {
     await client.query('delete from public.bookmarks');
     await client.query('delete from public.ingestion_runs');
@@ -25,9 +28,9 @@ export async function loadSet(client: Client, set: FixtureSet): Promise<void> {
     for (const i of set.items) {
       await client.query(
         `insert into public.items (id, canonical_url, source_id, title, published_at, image_url, summary, category, status,
-                                   category_method, relevance_method, ai_relevant, processing_version)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'seed', 'seed', true, 'seed')`,
-        [i.id, i.canonical_url, i.source_id, i.title, i.published_at, i.image_url, i.summary, i.category, i.status],
+                                   category_method, relevance_method, ai_relevant, processing_version, fetched_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'seed', 'seed', true, 'seed', coalesce($10::timestamptz, now()))`,
+        [i.id, i.canonical_url, i.source_id, i.title, i.published_at, i.image_url, i.summary, i.category, i.status, i.fetched_at ?? null],
       );
     }
     for (const r of set.runs) {
@@ -36,6 +39,8 @@ export async function loadSet(client: Client, set: FixtureSet): Promise<void> {
         [r.run_date, r.status, r.started_at, r.ended_at],
       );
     }
+    const latest = await latestRunId(client);
+    if (latest) await storeOtherShare(client, latest, windowEnd);
   });
 }
 
@@ -44,7 +49,8 @@ export async function seed(name: string, run: string): Promise<Record<string, un
     throw new UsageError(`Unknown fixture set ${name}. Known sets: ${fixtureSetNames().join(', ')}.`);
   }
   if (!RUN_MARKER.test(run)) throw new UsageError(`The run marker ${JSON.stringify(run)} must be letters, digits and hyphens.`);
-  const set = fixtureSet(name, { run, fixtures: requireEnv('FIXTURE_FEED_BASE_URL'), now: new Date() });
-  await withClient('MIGRATION_DATABASE_URL', (client) => loadSet(client, set));
+  const now = new Date();
+  const set = fixtureSet(name, { run, fixtures: requireEnv('FIXTURE_FEED_BASE_URL'), now });
+  await withClient('MIGRATION_DATABASE_URL', (client) => loadSet(client, set, now));
   return set.manifest;
 }

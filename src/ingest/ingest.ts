@@ -24,6 +24,7 @@ import { UsageError } from '../env.js';
 import { inTransaction, withClient, type Client } from '../db.js';
 import { collect, type CollectSource } from '../collect/collect.js';
 import { processEntries, PROCESSING_VERSION, type ItemToStore } from './process.js';
+import { storeOtherShare } from './other-share.js';
 import { representativeOrder } from '../process/dedupe.js';
 import { applyProcessing, type ProcessingCounts } from '../process/apply.js';
 
@@ -55,7 +56,7 @@ const sqlState = (error: unknown) => {
   return typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : undefined;
 };
 
-type Source = CollectSource & { display_policy: string; source_weight: number };
+type Source = CollectSource & { display_policy: string; default_categories: string[] | null; source_weight: number };
 type RunRow = { id: string; status: string; counts: Record<string, number>; source_errors: RunReport['source_errors'] };
 
 // The advisory lock space of the job: (LOCK_CLASS, days since 1970-01-01 of the run date).
@@ -101,6 +102,7 @@ async function collectAndProcess(sources: Source[], log: (line: string) => void)
   const sourceErrors: RunReport['source_errors'] = [];
   let fetched = 0;
   let dropped = 0;
+  let notRelevant = 0;
   for (const result of collected.results) {
     if (!result.ok) {
       sourceErrors.push({ source_id: result.source_id, error: result.error });
@@ -112,6 +114,7 @@ async function collectAndProcess(sources: Source[], log: (line: string) => void)
     const processed = processEntries(source, result.entries);
     items.push(...processed.items);
     dropped += processed.dropped;
+    notRelevant += processed.notRelevant;
   }
   // The items are stored in the representative order of B-07 (the highest source weight, then
   // the earliest), so of two copies of one canonical address in this run the first is the winner
@@ -124,13 +127,13 @@ async function collectAndProcess(sources: Source[], log: (line: string) => void)
   for (const skip of collected.skipped) log(`ingest: source ${skip.source_id} skipped (not a feed source)`);
   const feeds = collected.results.length;
   const status = feeds > 0 && sourceErrors.length === feeds ? 'failed' : sourceErrors.length > 0 ? 'partial' : 'completed';
-  return { status, items, weightOf, sourceErrors, requests: collected.requests, fetched, dropped, feeds, skipped: collected.skipped.length };
+  return { status, items, weightOf, sourceErrors, requests: collected.requests, fetched, dropped, notRelevant, feeds, skipped: collected.skipped.length };
 }
 
 function countsOf(work: Awaited<ReturnType<typeof collectAndProcess>>, added: number, processing?: ProcessingCounts, replaced?: number) {
   return {
     sources: work.feeds, sources_failed: work.sourceErrors.length, sources_skipped: work.skipped,
-    fetched: work.fetched, processed: work.items.length, dropped: work.dropped, added,
+    fetched: work.fetched, processed: work.items.length, dropped: work.dropped, not_relevant: work.notRelevant, added,
     ...(replaced === undefined ? {} : { replaced }),
     ...(processing ? { clusters: processing.clusters, duplicates_not_shown: processing.hidden, arxiv_capped: processing.arxiv_capped } : {}),
   };
@@ -139,7 +142,7 @@ function countsOf(work: Awaited<ReturnType<typeof collectAndProcess>>, added: nu
 export async function ingest(runDate: string, dryRun: boolean, log: (line: string) => void): Promise<RunReport> {
   return withClient('DATABASE_URL', async (client) => {
     const sources = (await client.query<Source>(
-      'select id, feed_url, source_type, display_policy, source_weight::float8 as source_weight from app_private.sources where enabled order by id',
+      'select id, feed_url, source_type, display_policy, default_categories, source_weight::float8 as source_weight from app_private.sources where enabled order by id',
     )).rows;
     log(`ingest: run date ${runDate}, ${sources.length} enabled sources${dryRun ? ', dry run' : ''}`);
 
@@ -150,7 +153,8 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
         'select canonical_url from public.items where canonical_url = any($1::text[])', [work.items.map((i) => i.canonical_url)],
       )).rows.length;
       const itemCount = await storedItemCount(client);
-      log(`ingest: dry run ${work.status}: fetched ${work.fetched}, processed ${work.items.length}, would add ${work.items.length - known}, `
+      log(`ingest: dry run ${work.status}: fetched ${work.fetched}, processed ${work.items.length}, not AI-relevant ${work.notRelevant}, `
+        + `would add ${work.items.length - known}, `
         + `failed sources ${work.sourceErrors.length}, stored items ${itemCount}; nothing was written`);
       return {
         run_id: existing?.id ?? null, run_date: runDate, status: work.status, dry_run: true,
@@ -209,20 +213,26 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
             // keeps its id and takes the copy's source-bound fields only when the copy wins in the
             // representative order (src/process/dedupe.ts: the higher source weight, then the
             // earlier publication or else fetch time; an equal copy changes nothing); a losing
-            // copy updates no row. Cluster, score and cap marks follow in applyProcessing.
+            // copy updates no row. Relevance and the category are decided on the copy's source and
+            // title (B-04, B-05), so a winning copy brings its own. Cluster, score and cap marks
+            // follow in applyProcessing.
             const result = await client.query<{ inserted: boolean }>(
-              `insert into public.items as i (id, canonical_url, source_id, title, published_at, summary, summary_method, status, processing_version)
-               values ($1, $2, $3, $4, $5, $6, $7, 'processed', $8)
+              `insert into public.items as i (id, canonical_url, source_id, title, published_at, summary, summary_method,
+                                              ai_relevant, relevance_method, category, category_method, status, processing_version)
+               values ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, 'processed', $11)
                on conflict (canonical_url) do update
                   set source_id = excluded.source_id, title = excluded.title, published_at = excluded.published_at,
                       fetched_at = excluded.fetched_at, image_url = excluded.image_url, summary = excluded.summary,
-                      summary_method = excluded.summary_method, processing_version = excluded.processing_version
-                where $9::float8 > coalesce((select s.source_weight::float8 from app_private.sources s where s.id = i.source_id), 0)
-                   or ($9::float8 = coalesce((select s.source_weight::float8 from app_private.sources s where s.id = i.source_id), 0)
+                      summary_method = excluded.summary_method, relevance_method = excluded.relevance_method,
+                      category = excluded.category, category_method = excluded.category_method,
+                      processing_version = excluded.processing_version
+                where $12::float8 > coalesce((select s.source_weight::float8 from app_private.sources s where s.id = i.source_id), 0)
+                   or ($12::float8 = coalesce((select s.source_weight::float8 from app_private.sources s where s.id = i.source_id), 0)
                        and coalesce(excluded.published_at, excluded.fetched_at) < coalesce(i.published_at, i.fetched_at))
                returning (xmax = 0) as inserted`,
               [item.id, item.canonical_url, item.source_id, item.title, item.published_at, item.summary,
-                item.summary === null ? null : 'feed', PROCESSING_VERSION, done.weightOf.get(item.source_id) ?? 0],
+                item.summary === null ? null : 'feed', item.relevance_method, item.category, item.category_method, PROCESSING_VERSION,
+                done.weightOf.get(item.source_id) ?? 0],
             );
             for (const row of result.rows) {
               if (row.inserted) inserted += 1;
@@ -231,6 +241,9 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
           }
           const processing = await applyProcessing(client, log);
           if (replaced) log(`ingest: ${replaced} stored item(s) taken over by a copy that represents them under B-07`);
+          // B-06: the Other share over the 7 days up to this write, stored with the run; after
+          // applyProcessing, so the window counts the representatives of this run's clusters.
+          await storeOtherShare(client, runId, null);
           await client.query(
             'update public.ingestion_runs set status = $2, ended_at = now(), counts = $3, source_errors = $4 where id = $1',
             [runId, done.status, JSON.stringify(countsOf(done, inserted, processing, replaced)), JSON.stringify(done.sourceErrors)],
@@ -269,7 +282,8 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
 
       // The items and the run's status and counts are committed: what follows only reads.
       const { itemCount, reportError } = await reportedItemCount(client, runId, runDate, log);
-      log(`ingest: run ${runId} of ${runDate} ended ${work.status}: fetched ${work.fetched}, processed ${work.items.length}, added ${added}, `
+      log(`ingest: run ${runId} of ${runDate} ended ${work.status}: fetched ${work.fetched}, processed ${work.items.length}, `
+        + `not AI-relevant ${work.notRelevant}, added ${added}, `
         + `failed sources ${work.sourceErrors.length}, stored items ${itemCount ?? 'unknown'}`);
       return {
         run_id: runId, run_date: runDate, status: work.status, dry_run: false,
