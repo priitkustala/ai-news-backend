@@ -93,6 +93,7 @@ async function collectAndProcess(sources: Source[], log: (line: string) => void)
   const sourceErrors: RunReport['source_errors'] = [];
   let fetched = 0;
   let dropped = 0;
+  let notRelevant = 0;
   for (const result of collected.results) {
     if (!result.ok) {
       sourceErrors.push({ source_id: result.source_id, error: result.error });
@@ -104,17 +105,18 @@ async function collectAndProcess(sources: Source[], log: (line: string) => void)
     const processed = processEntries(source, result.entries);
     items.push(...processed.items);
     dropped += processed.dropped;
+    notRelevant += processed.notRelevant;
   }
   for (const skip of collected.skipped) log(`ingest: source ${skip.source_id} skipped (not a feed source)`);
   const feeds = collected.results.length;
   const status = feeds > 0 && sourceErrors.length === feeds ? 'failed' : sourceErrors.length > 0 ? 'partial' : 'completed';
-  return { status, items, sourceErrors, requests: collected.requests, fetched, dropped, feeds, skipped: collected.skipped.length };
+  return { status, items, sourceErrors, requests: collected.requests, fetched, dropped, notRelevant, feeds, skipped: collected.skipped.length };
 }
 
 function countsOf(work: Awaited<ReturnType<typeof collectAndProcess>>, added: number) {
   return {
     sources: work.feeds, sources_failed: work.sourceErrors.length, sources_skipped: work.skipped,
-    fetched: work.fetched, processed: work.items.length, dropped: work.dropped, added,
+    fetched: work.fetched, processed: work.items.length, dropped: work.dropped, not_relevant: work.notRelevant, added,
   };
 }
 
@@ -132,7 +134,8 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
         'select canonical_url from public.items where canonical_url = any($1::text[])', [work.items.map((i) => i.canonical_url)],
       )).rows.length;
       const itemCount = await storedItemCount(client);
-      log(`ingest: dry run ${work.status}: fetched ${work.fetched}, processed ${work.items.length}, would add ${work.items.length - known}, `
+      log(`ingest: dry run ${work.status}: fetched ${work.fetched}, processed ${work.items.length}, not AI-relevant ${work.notRelevant}, `
+        + `would add ${work.items.length - known}, `
         + `failed sources ${work.sourceErrors.length}, stored items ${itemCount}; nothing was written`);
       return {
         run_id: existing?.id ?? null, run_date: runDate, status: work.status, dry_run: true,
@@ -187,11 +190,12 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
           let inserted = 0;
           for (const item of done.items) {
             const result = await client.query(
-              `insert into public.items (id, canonical_url, source_id, title, published_at, summary, summary_method, status, processing_version)
-               values ($1, $2, $3, $4, $5, $6, $7, 'processed', $8)
+              `insert into public.items (id, canonical_url, source_id, title, published_at, summary, summary_method,
+                                         ai_relevant, relevance_method, status, processing_version)
+               values ($1, $2, $3, $4, $5, $6, $7, true, $8, 'processed', $9)
                on conflict do nothing`,
               [item.id, item.canonical_url, item.source_id, item.title, item.published_at, item.summary,
-                item.summary === null ? null : 'feed', PROCESSING_VERSION],
+                item.summary === null ? null : 'feed', item.relevance_method, PROCESSING_VERSION],
             );
             inserted += result.rowCount ?? 0;
           }
@@ -233,7 +237,8 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
 
       // The items and the run's status and counts are committed: what follows only reads.
       const { itemCount, reportError } = await reportedItemCount(client, runId, runDate, log);
-      log(`ingest: run ${runId} of ${runDate} ended ${work.status}: fetched ${work.fetched}, processed ${work.items.length}, added ${added}, `
+      log(`ingest: run ${runId} of ${runDate} ended ${work.status}: fetched ${work.fetched}, processed ${work.items.length}, `
+        + `not AI-relevant ${work.notRelevant}, added ${added}, `
         + `failed sources ${work.sourceErrors.length}, stored items ${itemCount ?? 'unknown'}`);
       return {
         run_id: runId, run_date: runDate, status: work.status, dry_run: false,
