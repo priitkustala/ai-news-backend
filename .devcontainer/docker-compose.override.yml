@@ -173,6 +173,11 @@ services:
     volumes:
       - ..:/srv/backend:ro
       - node-modules:/srv/backend/node_modules:ro
+      # AI_NEWS_FRONTEND names the paired frontend working copy (unset for the repository
+      # folder, which pairs with ai-news-frontend; the host scripts set ai-news-frontend-<key>).
+      # Read-only, for the scan-secrets relay of AC-20e (priitkustala/ai-news#43); the relay
+      # never writes there.
+      - ../../${AI_NEWS_FRONTEND:-ai-news-frontend}:/workspaces/${AI_NEWS_FRONTEND:-ai-news-frontend}:ro
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:8090/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
       interval: 5s

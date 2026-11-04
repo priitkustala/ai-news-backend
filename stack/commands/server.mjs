@@ -2,7 +2,10 @@
 // the ai-news-frontend box's scenarios set up their Given with this checkout's `seed`,
 // `ingest` and `sign-in` commands (E2E_BACKEND_COMMAND). POST /run with {"args": [...]}
 // runs `node dist/cli.js <args>` and answers {"exitCode", "stdout", "stderr"}; any other
-// subcommand is refused. It listens only on the compose networks (no host port), runs one
+// subcommand is refused. `scan-secrets` is relayed too (priitkustala/ai-news#43, AC-20e):
+// the frontend scenario scans the paired frontend copy, mounted read-only at
+// /workspaces/<copy>, with absolute paths; the scan prints counts and key kinds, never a value.
+// It listens only on the compose networks (no host port), runs one
 // command at a time (the scenarios run on one worker, AD-08) and logs the subcommand only.
 import { spawn } from 'node:child_process';
 import http from 'node:http';
@@ -12,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CLI = path.join(ROOT, 'dist', 'cli.js');
 const PORT = Number(process.env.COMMANDS_PORT ?? 8090);
-const ALLOWED = new Set(['seed', 'ingest', 'sign-in']);
+const ALLOWED = new Set(['seed', 'ingest', 'sign-in', 'scan-secrets']);
 const TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_BODY = 64 * 1024;
 let busy = false;

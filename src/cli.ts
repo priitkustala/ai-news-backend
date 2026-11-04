@@ -4,10 +4,11 @@
 // output (tests/README-testids.md, Named commands and outputs); messages go to standard error.
 import { loadLocalEnv, UsageError } from './env.js';
 import { generateKeys } from './keys.js';
-import { migrate } from './migrate.js';
+import { checkMigration, migrate } from './migrate.js';
 import { seed } from './seed.js';
 import { isPersona, PERSONAS, signIn } from './auth.js';
 import { ingest, parseRunDate } from './ingest/ingest.js';
+import { scanSecrets } from './scan/scan.js';
 import { measure } from './measure/measure.js';
 import { MeasureError } from './measure/sample.js';
 
@@ -17,15 +18,20 @@ Commands of the job and the local test environment:
   ingest <run-date> [--dry-run]     run the ingestion job for a date (YYYY-MM-DD); --dry-run writes nothing
   seed <fixture-set> <run-marker>   reset the local database to the base seed plus a fixture set
   sign-in <persona>                 development sign-in of a seeded persona (${PERSONAS.join(', ')}); prints its access token
+  scan-secrets <path>...            scan a repository, a folder or a file for this stack's seeded secrets
+                                    (counts and pattern names only) and the key kinds a built client carries
   measure                           run the pipeline on the frozen validation sample (fixtures/validation-sample/) and print
                                     the measurement report: values only, no verdict (OD-26)
 
 Set-up of the local test environment:
   keys                              generate this stack's local keys into the git-ignored .env files (once)
   migrate                           apply the migrations, create the personas and load the base seed (safe to run again)
+  check-migration <sql-file>        apply a migration-shaped file as migrate would, report the owner-only check's
+                                    verdict and findings, and roll everything back (scenarios of the guard)
 
 Exit status: 0 done; 1 failed (for ingest: the run could not finish its writes; for measure: the sample cannot be measured); 2 usage;
 3 ingest: the run is persisted as reported, but a read for the report failed after the commit.
+scan-secrets exits 1 when it finds a seeded secret (the report is printed first).
 `;
 
 const print = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -62,6 +68,12 @@ async function main(argv: string[]): Promise<void> {
       print({ access_token: await signIn(persona) });
       return;
     }
+    case 'scan-secrets': {
+      const report = scanSecrets(args, process.env, log);
+      print(report);
+      if (report.secret_matches > 0) process.exitCode = 1;
+      return;
+    }
     case 'measure': {
       if (args.length !== 0) throw new UsageError('measure takes no arguments.');
       print(measure(log));
@@ -76,6 +88,11 @@ async function main(argv: string[]): Promise<void> {
     case 'migrate':
       print(await migrate());
       return;
+    case 'check-migration': {
+      if (args.length !== 1) throw new UsageError('check-migration takes one SQL file.');
+      print(await checkMigration(args[0]));
+      return;
+    }
     default:
       throw new UsageError(`Unknown command ${command}.\n${USAGE}`);
   }

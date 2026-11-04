@@ -47,6 +47,9 @@ the project folder (`<key>` is the story key in lower case, `s-03`, or a task's 
 build and test in parallel without sharing a database. `<folder>` is `ai-news-backend-<key>`;
 `<icompose>` stands for, from that folder on the host,
 `AI_NEWS_NETWORK=<folder>-local AI_NEWS_CLAUDE_VOLUME=instance-claude-config AI_NEWS_CODEX_VOLUME=instance-codex-config docker compose -p <folder>_devcontainer -f .devcontainer/docker-compose.yml -f .devcontainer/docker-compose.override.yml`.
+`AI_NEWS_FRONTEND` names the paired frontend working copy that `ai-news-commands` mounts
+read-only at `/workspaces/<copy>` for the `scan-secrets` relay (unset: the `ai-news-frontend`
+folder); the host instance scripts set these variables.
 Never run `<icompose> config`: it prints the local keys. A frontend instance pairs with one
 backend instance (see `ai-news-frontend`'s `AGENTS.md`).
 
