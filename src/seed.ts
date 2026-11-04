@@ -25,9 +25,9 @@ export async function loadSet(client: Client, set: FixtureSet): Promise<void> {
     for (const i of set.items) {
       await client.query(
         `insert into public.items (id, canonical_url, source_id, title, published_at, image_url, summary, category, status,
-                                   category_method, relevance_method, ai_relevant, processing_version)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'seed', 'seed', true, 'seed')`,
-        [i.id, i.canonical_url, i.source_id, i.title, i.published_at, i.image_url, i.summary, i.category, i.status],
+                                   category_method, relevance_method, ai_relevant, processing_version, fetched_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'seed', 'seed', true, 'seed', coalesce($10::timestamptz, now()))`,
+        [i.id, i.canonical_url, i.source_id, i.title, i.published_at, i.image_url, i.summary, i.category, i.status, i.fetched_at ?? null],
       );
     }
     for (const r of set.runs) {

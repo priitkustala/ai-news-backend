@@ -31,7 +31,10 @@ export type ItemRow = {
   canonical_url: string;
   source_id: string;
   title: string;
-  published_at: string;
+  // null: the feed gave no publication time (the window then counts the fetch time).
+  published_at: string | null;
+  // The fetch time; when absent the database records the seed time.
+  fetched_at?: string;
   image_url: string | null;
   summary: string | null;
   category: Category;
@@ -337,6 +340,51 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   'AC-28c': (ctx) => ({ adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = fixtureFeed(ctx, 'mirror.xml'); } }),
   'AC-28d': (ctx) => ({ adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = failing(ctx, 503, 'anthropic-news-mirror'); } }),
 
+  // Repair round 2 of S-03 (Astra round 1 findings on AC-06's Other share; OD-15, B-06).
+  'F-S03-1': (ctx, set) => {
+    // Ten representatives in the window ending at the seed time, four in Other; one has no
+    // publication time and is in the window by its fetch time. Outside it: future-dated items
+    // in Other and elsewhere, and expired ones (by publication time and by fetch time).
+    const plan: Category[] = ['other', 'other', 'other', 'other', 'releases', 'releases', 'policy', 'policy', 'business', 'business'];
+    const items = windowItems(ctx, set, plan);
+    items[9] = { ...items[9], published_at: null, fetched_at: ago(ctx, 2 * HOUR) };
+    const tc = src(set, 'techcrunch-ai');
+    const outside = (slug: string, category: Category, at: number, fetched?: number) => {
+      const row = item(tc, `${ctx.run}-${slug}`, `${ctx.run}-${slug} synthetic headline`, category, ago(ctx, at));
+      return fetched === undefined ? row : { ...row, published_at: null, fetched_at: ago(ctx, fetched) };
+    };
+    return {
+      items: [
+        ...items,
+        outside('future-other-1', 'other', -DAY), outside('future-other-2', 'other', -3 * DAY), outside('future-policy', 'policy', -2 * DAY),
+        outside('expired-other', 'other', 8 * DAY), outside('expired-releases', 'releases', 9 * DAY),
+        outside('expired-fetched-other', 'other', 0, 8 * DAY),
+      ],
+      adjust: outOfWindow(ctx),
+    };
+  },
+  'F-S03-2-exact': (ctx, set) => shareWindow(ctx, set, 3, 10),
+  'F-S03-2-above': (ctx, set) => shareWindow(ctx, set, 1000, 3333),
+  'F-S03-2-below': (ctx, set) => shareWindow(ctx, set, 999, 3333),
+  'F-S03-3': (ctx, set) => {
+    // AC-06's window plus one more Other item that leaves the 7-day window 40 seconds after
+    // the seed time: a share computed when the view is read changes then by itself. The run
+    // dates the scenario uses (yesterday and today) are kept free: the stale run moves back.
+    const plan: Category[] = ['other', 'other', 'other', 'other', 'releases', 'releases', 'policy', 'policy', 'business', 'business'];
+    const leavesAt = new Date(ctx.now.getTime() + 40 * 1000);
+    const leaving = item(src(set, 'techcrunch-ai'), `${ctx.run}-leaving`, `${ctx.run}-leaving synthetic headline`, 'other',
+      new Date(leavesAt.getTime() - 7 * DAY).toISOString());
+    return {
+      items: [...windowItems(ctx, set, plan), leaving],
+      adjust: (all) => {
+        outOfWindow(ctx)(all);
+        const stale = new Date(ctx.now.getTime() - 5 * DAY);
+        all.runs = [{ run_date: isoDate(stale), status: 'completed', started_at: stale.toISOString(), ended_at: stale.toISOString() }];
+      },
+      manifest: () => ({ leaves_window_at: leavesAt.toISOString() }),
+    };
+  },
+
   // ai-news-frontend rows.
   'AC-03a': (ctx) => ({ sources: [source('fixture-hostile-title', 'Fixture feed with a script title', fixtureFeed(ctx, 'hostile-title.xml'))] }),
   'AC-03b': (ctx) => ({
@@ -508,6 +556,25 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
     manifest: () => ({ mirror_titles: [1, 2].map((n) => `${ctx.run}-mirror-${n} synthetic announcement`) }),
   }),
 };
+
+// Window items on TechCrunch AI titled `<run>-window-<n>`, one per category of the plan, an
+// hour or less apart inside the 7-day window ending at the seed time.
+function windowItems(ctx: SeedContext, set: FixtureSet, plan: Category[]): ItemRow[] {
+  const step = Math.min(HOUR, Math.floor((6 * DAY) / plan.length));
+  return plan.map((category, index) =>
+    item(src(set, 'techcrunch-ai'), `${ctx.run}-window-${index}`, `${ctx.run}-window-${index} synthetic headline`, category, ago(ctx, (index + 1) * step)));
+}
+
+// Moves the base items out of the window (8 days back), as AC-06 does.
+function outOfWindow(ctx: SeedContext): (set: FixtureSet) => void {
+  return (set) => { for (const row of set.items) if (!row.title.startsWith(ctx.run)) row.published_at = ago(ctx, 8 * DAY); };
+}
+
+// F-S03-2: a window of `total` representatives, `other` of them in Other.
+function shareWindow(ctx: SeedContext, set: FixtureSet, other: number, total: number): Extra {
+  const plan = Array.from({ length: total }, (_, index): Category => (index < other ? 'other' : 'business'));
+  return { items: windowItems(ctx, set, plan), adjust: outOfWindow(ctx), manifest: () => ({ window_other: other, window_items: total }) };
+}
 
 // AC-11: items in three categories and none in Research today: the base items outside
 // Releases, Policy and Business are moved out of today.
