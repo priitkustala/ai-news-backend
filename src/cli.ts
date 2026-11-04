@@ -4,7 +4,7 @@
 // output (tests/README-testids.md, Named commands and outputs); messages go to standard error.
 import { loadLocalEnv, UsageError } from './env.js';
 import { generateKeys } from './keys.js';
-import { migrate } from './migrate.js';
+import { checkMigration, migrate } from './migrate.js';
 import { seed } from './seed.js';
 import { isPersona, PERSONAS, signIn } from './auth.js';
 import { ingest, parseRunDate } from './ingest/ingest.js';
@@ -22,6 +22,8 @@ Commands of the job and the local test environment:
 Set-up of the local test environment:
   keys                              generate this stack's local keys into the git-ignored .env files (once)
   migrate                           apply the migrations, create the personas and load the base seed (safe to run again)
+  check-migration <sql-file>        apply a migration-shaped file as migrate would, report the owner-only check's
+                                    verdict and findings, and roll everything back (scenarios of the guard)
 
 Exit status: 0 done; 1 failed (for ingest: the run could not finish its writes); 2 usage;
 3 ingest: the run is persisted as reported, but a read for the report failed after the commit.
@@ -77,6 +79,11 @@ async function main(argv: string[]): Promise<void> {
     case 'migrate':
       print(await migrate());
       return;
+    case 'check-migration': {
+      if (args.length !== 1) throw new UsageError('check-migration takes one SQL file.');
+      print(await checkMigration(args[0]));
+      return;
+    }
     default:
       throw new UsageError(`Unknown command ${command}.\n${USAGE}`);
   }

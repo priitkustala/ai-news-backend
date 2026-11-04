@@ -28,6 +28,23 @@ function describeFindings(findings: { relation: string; finding: string }[]): st
   return findings.map((f) => `${f.relation}: ${f.finding}`).join('; ');
 }
 
+// A migration the owner-only check refuses; it carries the findings.
+class OpenSchemaError extends Error {
+  constructor(file: string, readonly findings: { relation: string; finding: string }[]) {
+    super(`${file} leaves the exposed schema open, so it is rolled back: ${describeFindings(findings)}`);
+  }
+}
+
+// One migration inside the caller's transaction: its SQL, the owner-only check, then its
+// ledger entry. A finding throws before the entry is written, so the caller's rollback
+// removes both the migration's objects and its entry.
+async function applyMigration(client: Client, file: string, sql: string): Promise<void> {
+  await client.query(sql);
+  const findings = await exposedSchemaFindings(client);
+  if (findings && findings.length > 0) throw new OpenSchemaError(file, findings);
+  await client.query('insert into app_private.schema_migrations (version) values ($1)', [file]);
+}
+
 export async function migrate(): Promise<Record<string, unknown>> {
   const ingestPassword = requireEnv('INGEST_DB_PASSWORD');
   // Role passwords cannot be bound as parameters; the generated value is base64url only.
@@ -46,14 +63,7 @@ export async function migrate(): Promise<Record<string, unknown>> {
     for (const file of files) {
       if (done.has(file)) continue;
       const sql = fs.readFileSync(path.join(MIGRATIONS, file), 'utf8');
-      await inTransaction(client, async () => {
-        await client.query(sql);
-        const findings = await exposedSchemaFindings(client);
-        if (findings && findings.length > 0) {
-          throw new Error(`${file} leaves the exposed schema open, so it is rolled back: ${describeFindings(findings)}`);
-        }
-        await client.query('insert into app_private.schema_migrations (version) values ($1)', [file]);
-      });
+      await inTransaction(client, () => applyMigration(client, file, sql));
       now.push(file);
     }
     await client.query(`alter role ingest_job with login password '${ingestPassword}'`);
@@ -86,4 +96,58 @@ export async function migrate(): Promise<Record<string, unknown>> {
     personas: PERSONAS,
     base_seed: 'loaded',
   };
+}
+
+// The catalog state check-migration compares: the policies and relations of public and
+// whether the ledger holds the probe's entry. Reported as counts and booleans only.
+async function catalogState(client: Client, file: string): Promise<{ policies: number; fingerprint: string; ledger: boolean }> {
+  const result = await client.query<{ policies: number; fingerprint: string; ledger: boolean }>(
+    `select (select count(*)::integer from pg_catalog.pg_policies where schemaname = 'public') as policies,
+            md5(coalesce((select string_agg(concat_ws('|', tablename, policyname, permissive, roles::text, cmd, qual, with_check), ',' order by tablename, policyname)
+                            from pg_catalog.pg_policies where schemaname = 'public'), '')
+                || coalesce((select string_agg(concat_ws('|', c.relname, c.relkind, c.relrowsecurity, c.reloptions::text, c.relacl::text), ',' order by c.relname)
+                               from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+                              where n.nspname = 'public'), '')) as fingerprint,
+            exists (select 1 from app_private.schema_migrations where version = $1) as ledger`,
+    [file],
+  );
+  return result.rows[0];
+}
+
+// `check-migration <sql-file>`: applies a migration-shaped file the way `migrate` applies each
+// migration (applyMigration), inside a savepoint of a transaction that is always rolled back,
+// and reports whether the owner-only check let it through. For the scenarios of the guard
+// (priitkustala/ai-news#43, F-S05-1); nothing it applies is kept.
+export async function checkMigration(sqlFile: string): Promise<Record<string, unknown>> {
+  if (!fs.existsSync(sqlFile) || !fs.statSync(sqlFile).isFile()) throw new UsageError(`check-migration: no file ${sqlFile}.`);
+  const file = path.basename(sqlFile);
+  const sql = fs.readFileSync(sqlFile, 'utf8');
+  return withClient('MIGRATION_DATABASE_URL', async (client) => {
+    if (!(await exposedSchemaFindings(client))) throw new Error('The owner-only check is missing: run migrate first.');
+    const before = await catalogState(client, file);
+    await client.query('begin');
+    let findings: { relation: string; finding: string }[] = [];
+    let afterCheck: { policies: number; fingerprint: string; ledger: boolean };
+    try {
+      await client.query('savepoint check_migration');
+      try {
+        await applyMigration(client, file, sql);
+      } catch (error) {
+        if (!(error instanceof OpenSchemaError)) throw error;
+        findings = error.findings;
+        await client.query('rollback to savepoint check_migration');
+      }
+      afterCheck = await catalogState(client, file);
+    } finally {
+      await client.query('rollback');
+    }
+    const after = await catalogState(client, file);
+    return {
+      migration: file,
+      owner_only_check: findings.length > 0 ? 'failed' : 'passed',
+      findings: findings.map((f) => `${f.relation}: ${f.finding}`),
+      after_check: { policy_change: afterCheck.policies - before.policies, ledger_entry: afterCheck.ledger },
+      after_rollback: { schema_unchanged: after.fingerprint === before.fingerprint, ledger_entry: after.ledger },
+    };
+  });
 }
