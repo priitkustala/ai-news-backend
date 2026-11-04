@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed B of a later-run copy (fixture)</title>
+    <link>https://example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}}-later-copy synthetic AI story (copy B)</title><link>https://example.com/ai-news-fixture/{{run}}-later-copy?utm_source=feed</link><description>Copy B, delivered by a later run.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://example.com/ai-news-fixture/{{run}}-later-copy?utm_source=feed</guid></item>
+  </channel>
+</rss>
