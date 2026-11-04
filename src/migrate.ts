@@ -13,10 +13,10 @@ import { fixtureSet } from './seed-data.js';
 
 const MIGRATIONS = path.join(repositoryRoot, 'db', 'migrations');
 
-// The owner-only check of 0005, per operation since 0006: every relation of public is a table
+// The owner-only check of 0008, per operation since 0009: every relation of public is a table
 // with row-level security or a security_invoker view, anon holds no privilege, and every client
 // policy requires the owner in the expression that governs each operation it applies to (USING
-// for reading, WITH CHECK or else USING for writing; the rule is in 0006's comment). Before 0005
+// for reading, WITH CHECK or else USING for writing; the rule is in 0009's comment). Before 0008
 // has run there is no check to run.
 async function exposedSchemaFindings(client: Client): Promise<{ relation: string; finding: string }[] | undefined> {
   const exists = await client.query<{ present: boolean }>(

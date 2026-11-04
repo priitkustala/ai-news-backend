@@ -1,8 +1,8 @@
 -- The owner-only check per operation (priitkustala/ai-news#43, S-05, repair round 2, finding
--- F-S05-1). 0005's check accepted a client policy whose USING and WITH CHECK, joined into one
+-- F-S05-1). 0008's check accepted a client policy whose USING and WITH CHECK, joined into one
 -- text, mentioned app_private.is_owner() anywhere, so a policy with using (true) and the owner
 -- only in WITH CHECK admitted every signed-in reader and still passed. This replaces the policy
--- predicate of app_private.exposed_schema_findings(); its other predicates stay as 0005 wrote
+-- predicate of app_private.exposed_schema_findings(); its other predicates stay as 0008 wrote
 -- them (row-level security on every table, security_invoker on every view, no materialized view
 -- or foreign table, no privilege for anon).
 --
@@ -83,7 +83,7 @@ create function app_private.expression_requires_owner(expr text)
   $$;
 revoke all on function app_private.expression_requires_owner(text) from public, anon, authenticated;
 
--- 0005's check with the policy predicate per operation.
+-- 0008's check with the policy predicate per operation.
 create or replace function app_private.exposed_schema_findings()
   returns table (relation text, finding text)
   language sql stable set search_path = ''

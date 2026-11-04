@@ -1,5 +1,5 @@
 -- Owner-only access for every later relation of the exposed schema (priitkustala/ai-news#43,
--- S-05, plan step 2). The five relations of 0001 to 0004 already admit only the owner: row-level
+-- S-05, plan step 2). The five relations of 0001 to 0007 already admit only the owner: row-level
 -- security with app_private.is_owner() on items, ingestion_runs and bookmarks, and
 -- security_invoker on the feed and categories views, which therefore return only the rows the
 -- policies of the tables beneath them admit (residual risk L8). What was missing is the
