@@ -5,7 +5,9 @@
 // an earlier date left `running` by an interrupted job is marked `abandoned`. Every enabled
 // source is collected on its own (module collect); the run ends `completed`, `partial` when
 // some sources failed, or `failed` when every source failed, and stored items are never
-// removed. With --dry-run it fetches and processes and writes nothing. A session advisory
+// removed. In the same transaction as the run's new items, every stored item is clustered
+// again with the earlier ones (S-04, src/process/apply.ts), so the `feed` view shows one
+// representative per cluster. With --dry-run it fetches and processes and writes nothing. A session advisory
 // lock per run date keeps two starts of the same date from running at once. If the run's own
 // writes fail after it started, they are rolled back and the run is recorded `failed` with a
 // safe error (counts.run_error; the command exits 1); if even that record is refused, the
@@ -18,6 +20,8 @@ import { UsageError } from '../env.js';
 import { inTransaction, withClient, type Client } from '../db.js';
 import { collect, type CollectSource } from '../collect/collect.js';
 import { processEntries, PROCESSING_VERSION, type ItemToStore } from './process.js';
+import { representativeOrder } from '../process/dedupe.js';
+import { applyProcessing } from '../process/apply.js';
 
 export type RunReport = {
   run_id: string | null;
@@ -47,7 +51,7 @@ const sqlState = (error: unknown) => {
   return typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : undefined;
 };
 
-type Source = CollectSource & { display_policy: string };
+type Source = CollectSource & { display_policy: string; source_weight: number };
 type RunRow = { id: string; status: string; counts: Record<string, number>; source_errors: RunReport['source_errors'] };
 
 // The advisory lock space of the job: (LOCK_CLASS, days since 1970-01-01 of the run date).
@@ -105,23 +109,31 @@ async function collectAndProcess(sources: Source[], log: (line: string) => void)
     items.push(...processed.items);
     dropped += processed.dropped;
   }
+  // Of two new items with the same canonical address the insert keeps the first, so the items
+  // are stored in the representative order of B-07: the highest source weight, then the earliest.
+  const weightOf = new Map(sources.map((s) => [s.id, Number(s.source_weight)]));
+  const candidate = (item: ItemToStore) => ({
+    ...item, source_weight: weightOf.get(item.source_id) ?? 0, time: item.published_at ? Date.parse(item.published_at) : Date.now(),
+  });
+  items.sort((a, b) => representativeOrder(candidate(a), candidate(b)));
   for (const skip of collected.skipped) log(`ingest: source ${skip.source_id} skipped (not a feed source)`);
   const feeds = collected.results.length;
   const status = feeds > 0 && sourceErrors.length === feeds ? 'failed' : sourceErrors.length > 0 ? 'partial' : 'completed';
   return { status, items, sourceErrors, requests: collected.requests, fetched, dropped, feeds, skipped: collected.skipped.length };
 }
 
-function countsOf(work: Awaited<ReturnType<typeof collectAndProcess>>, added: number) {
+function countsOf(work: Awaited<ReturnType<typeof collectAndProcess>>, added: number, clusters?: { clusters: number; hidden: number }) {
   return {
     sources: work.feeds, sources_failed: work.sourceErrors.length, sources_skipped: work.skipped,
     fetched: work.fetched, processed: work.items.length, dropped: work.dropped, added,
+    ...(clusters ? { clusters: clusters.clusters, duplicates_not_shown: clusters.hidden } : {}),
   };
 }
 
 export async function ingest(runDate: string, dryRun: boolean, log: (line: string) => void): Promise<RunReport> {
   return withClient('DATABASE_URL', async (client) => {
     const sources = (await client.query<Source>(
-      'select id, feed_url, source_type, display_policy from app_private.sources where enabled order by id',
+      'select id, feed_url, source_type, display_policy, source_weight::float8 as source_weight from app_private.sources where enabled order by id',
     )).rows;
     log(`ingest: run date ${runDate}, ${sources.length} enabled sources${dryRun ? ', dry run' : ''}`);
 
@@ -195,9 +207,10 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
             );
             inserted += result.rowCount ?? 0;
           }
+          const processing = await applyProcessing(client, log);
           await client.query(
             'update public.ingestion_runs set status = $2, ended_at = now(), counts = $3, source_errors = $4 where id = $1',
-            [runId, done.status, JSON.stringify(countsOf(done, inserted)), JSON.stringify(done.sourceErrors)],
+            [runId, done.status, JSON.stringify(countsOf(done, inserted, processing)), JSON.stringify(done.sourceErrors)],
           );
           return inserted;
         });
