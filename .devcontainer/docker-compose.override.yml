@@ -157,7 +157,10 @@ services:
       timeout: 5s
       retries: 20
     networks:
-      - internal
+      internal: {}
+      # Shared with the ai-news-frontend box, so its client loads the seeded fixture
+      # images as http://ai-news-feeds:8081/images/... (S-09, priitkustala/ai-news#46, finding B1).
+      ai-news-local: {}
 
   ai-news-commands:
     # Development-only relay for the ai-news-frontend box (priitkustala/ai-news#40): its
