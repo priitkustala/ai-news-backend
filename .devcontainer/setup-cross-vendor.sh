@@ -29,14 +29,14 @@ if command -v codex >/dev/null; then
   echo "cross-vendor: codex already installed ($(codex --version 2>/dev/null || echo unknown))"
 else
   echo "cross-vendor: installing Codex CLI"
-  # Pinned (repo doctrine forbids unpinned installs); 0.145.0 is the newest stable
-  # that clears the 30-day age gate written above — a fresher pin the gate refuses.
+  # Pinned (repo doctrine forbids unpinned installs); older pins cannot serve gpt-6-astra.
+  # 0.166.0 is inside the 30-day age gate above until 2026-11-28 (owner-approved by name 2026-11-05); an npm >= 11.6 refuses it until then.
   # Guarded: under set -e a registry hiccup here would abort the whole postCreate
   # chain (memspec, gradle toolchains). Degrade to a named warning instead.
-  if npm install -g @openai/codex@0.145.0 >/dev/null; then
+  if npm install -g @openai/codex@0.166.0 >/dev/null; then
     echo "cross-vendor: codex $(codex --version 2>/dev/null || echo '?') installed"
   else
-    echo "cross-vendor: WARN codex install failed (registry hiccup?) — continuing without it; rerun 'npm i -g @openai/codex@0.145.0'"
+    echo "cross-vendor: WARN codex install failed (registry hiccup?) — continuing without it; rerun 'npm i -g @openai/codex@0.166.0'"
   fi
 fi
 
