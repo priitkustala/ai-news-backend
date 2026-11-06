@@ -5,12 +5,15 @@
 // (covering the headers and the whole body) and a size bound; a transient failure (network,
 // timeout, HTTP 429 or 5xx), whether it happens before the headers or while the body is read,
 // is retried with backoff, any other failure (size, redirect, other HTTP status) is final at
-// once. Node 22's built-in fetch, no dependency.
+// once. A paced source (arXiv) waits for its turn before every attempt. Node 22's built-in
+// fetch, no dependency.
 
 export const FETCH_ATTEMPTS = 3;
 export const FETCH_BACKOFF_MS = [250, 750];
 export const FETCH_TIMEOUT_MS = 15_000;
 export const FETCH_MAX_BYTES = 10 * 1024 * 1024;
+// arXiv asks for at most one request every three seconds (B-03).
+export const ARXIV_MIN_GAP_MS = 3_000;
 
 // A failure of one source, recorded on the run as `source_errors[].error`. The message names
 // the kind of failure and numbers only, never the feed's content (Locked R-21).
@@ -21,6 +24,24 @@ export class SourceFailure extends Error {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// The arXiv gate: paced attempts, of any lane and retries included, take turns; each turn
+// starts at least ARXIV_MIN_GAP_MS after the previous turn's request was answered (or
+// failed), so arXiv receives at most one request every three seconds.
+let arxivQueue: Promise<void> = Promise.resolve();
+let arxivLast = Number.NEGATIVE_INFINITY;
+async function arxivTurn(): Promise<() => void> {
+  let release = () => {};
+  const answered = new Promise<void>((resolve) => { release = () => { arxivLast = performance.now(); resolve(); }; });
+  const turn = arxivQueue.then(async () => {
+    for (let wait = arxivLast + ARXIV_MIN_GAP_MS - performance.now(); wait > 0; wait = arxivLast + ARXIV_MIN_GAP_MS - performance.now()) {
+      await sleep(Math.ceil(wait));
+    }
+  });
+  arxivQueue = turn.then(() => answered);
+  await turn;
+  return release;
+}
 
 async function readBounded(response: Response): Promise<string> {
   const declared = Number(response.headers.get('content-length') ?? '0');
@@ -47,7 +68,7 @@ function classify(error: unknown, stage: string): SourceFailure {
   return new SourceFailure('network', `the connection failed ${stage}${cause ? ` (${cause})` : ''}`, true);
 }
 
-async function attempt(url: string): Promise<string> {
+async function attempt(url: string, answered?: () => void): Promise<string> {
   let response: Response;
   try {
     response = await fetch(url, {
@@ -57,6 +78,8 @@ async function attempt(url: string): Promise<string> {
     });
   } catch (error) {
     throw classify(error, 'before the headers');
+  } finally {
+    answered?.();
   }
   if (response.status >= 300 && response.status < 400) {
     await response.body?.cancel().catch(() => undefined);
@@ -75,11 +98,13 @@ async function attempt(url: string): Promise<string> {
   }
 }
 
-// The body of the feed at `url`, or a SourceFailure after at most FETCH_ATTEMPTS attempts.
-export async function fetchFeed(url: string): Promise<{ body: string; attempts: number }> {
+// The body of the feed at `url`, or a SourceFailure after at most FETCH_ATTEMPTS attempts;
+// with `paced`, each attempt waits for its turn at the arXiv gate.
+export async function fetchFeed(url: string, options: { paced?: boolean } = {}): Promise<{ body: string; attempts: number }> {
   for (let n = 1; ; n += 1) {
+    const answered = options.paced ? await arxivTurn() : undefined;
     try {
-      return { body: await attempt(url), attempts: n };
+      return { body: await attempt(url, answered), attempts: n };
     } catch (error) {
       const failure = classify(error, 'during the request');
       if (!failure.transient || n >= FETCH_ATTEMPTS) {

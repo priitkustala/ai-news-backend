@@ -4,16 +4,18 @@
 // answers with an error or returns invalid XML becomes that source's recorded failure and
 // never stops or changes the others (B-02). At most COLLECT_CONCURRENCY sources are fetched
 // at a time. Reddit sources are collected by S-07 (priitkustala/ai-news#44) and are skipped
-// here without a request.
+// here without a request. An item over the per-item limit is rejected and recorded with its
+// source (src/collect/parse.ts); it never fails the source or stops its siblings. arXiv
+// sources are paced (src/collect/fetch.ts).
 import { fetchFeed, SourceFailure } from './fetch.js';
-import { parseFeed, type FeedEntry } from './parse.js';
+import { parseFeedItems, type FeedEntry } from './parse.js';
 
 export const COLLECT_CONCURRENCY = 4;
 
 export type CollectSource = { id: string; feed_url: string; source_type: string };
 
 export type SourceResult =
-  | { source_id: string; ok: true; entries: FeedEntry[]; attempts: number }
+  | { source_id: string; ok: true; entries: FeedEntry[]; rejected: string[]; attempts: number }
   | { source_id: string; ok: false; error: string };
 
 export type CollectResult = {
@@ -22,10 +24,17 @@ export type CollectResult = {
   requests: { source_id: string; source_type: string; host: string }[];
 };
 
+// A source arXiv paces: its id starts with arxiv- or its host is arxiv.org or a subdomain.
+export function isArxivSource(source: CollectSource): boolean {
+  const host = URL.parse(source.feed_url)?.hostname.toLowerCase() ?? '';
+  return source.id.startsWith('arxiv-') || host === 'arxiv.org' || host.endsWith('.arxiv.org');
+}
+
 async function collectOne(source: CollectSource): Promise<SourceResult> {
   try {
-    const { body, attempts } = await fetchFeed(source.feed_url);
-    return { source_id: source.id, ok: true, entries: parseFeed(body), attempts };
+    const { body, attempts } = await fetchFeed(source.feed_url, { paced: isArxivSource(source) });
+    const { entries, rejected } = parseFeedItems(body);
+    return { source_id: source.id, ok: true, entries, rejected, attempts };
   } catch (error) {
     const message = error instanceof SourceFailure ? error.message : 'unexpected: the source could not be collected';
     return { source_id: source.id, ok: false, error: message };

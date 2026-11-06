@@ -4,7 +4,8 @@
 // validator or the parser sees it, so their DTD readers never run. The XML is then
 // validated, because the parser itself accepts malformed input; entity processing stays off,
 // and only the five predefined XML entities and numeric character references are decoded,
-// in one pass.
+// in one pass. An item whose parsed node is larger than ITEM_MAX_BYTES is rejected and
+// recorded by its size alone (S-11, priitkustala/ai-news#47; B-03), never stored.
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { SourceFailure } from './fetch.js';
 
@@ -15,6 +16,14 @@ export type FeedEntry = {
   published: string | null;
   guid: string | null;
 };
+
+// The per-item limit (owner's answer, 2026-11-06): 2 MiB, measured on the serialised parsed
+// item node, so every field of the item counts, not only the ones kept.
+export const ITEM_MAX_BYTES = 2 * 1024 * 1024;
+
+// The kept entries of a feed and the reason of each rejected item: kind and numbers only,
+// never the feed's content (Locked R-21).
+export type ParsedFeed = { entries: FeedEntry[]; rejected: string[] };
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -97,7 +106,7 @@ export function declaresDoctype(body: string): boolean {
   return false;
 }
 
-export function parseFeed(body: string): FeedEntry[] {
+export function parseFeedItems(body: string): ParsedFeed {
   if (declaresDoctype(body)) {
     throw new SourceFailure('invalid-xml', 'the document declares a DOCTYPE; DTDs are not processed');
   }
@@ -113,18 +122,29 @@ export function parseFeed(body: string): FeedEntry[] {
     // report carry no feed content).
     throw new SourceFailure('invalid-xml', 'the parser refused the document');
   }
+  const parsed: ParsedFeed = { entries: [], rejected: [] };
+  const take = (nodes: Node, atom: boolean) => {
+    for (const node of list(nodes)) {
+      if (!node || typeof node !== 'object') continue;
+      const size = Buffer.byteLength(JSON.stringify(node), 'utf8');
+      if (size > ITEM_MAX_BYTES) parsed.rejected.push(`oversized: the item is ${size} bytes, over the limit of ${ITEM_MAX_BYTES} bytes`);
+      else parsed.entries.push(entryOf(node as Record<string, unknown>, atom));
+    }
+    return parsed;
+  };
   const rss = doc.rss as Record<string, unknown> | undefined;
   if (rss && typeof rss === 'object') {
     const channel = (Array.isArray(rss.channel) ? rss.channel[0] : rss.channel) as Record<string, unknown> | undefined;
-    return list(channel?.item).filter((i) => i && typeof i === 'object').map((i) => entryOf(i as Record<string, unknown>, false));
+    return take(channel?.item, false);
   }
   const rdf = doc['rdf:RDF'] as Record<string, unknown> | undefined;
-  if (rdf && typeof rdf === 'object') {
-    return list(rdf.item).filter((i) => i && typeof i === 'object').map((i) => entryOf(i as Record<string, unknown>, false));
-  }
+  if (rdf && typeof rdf === 'object') return take(rdf.item, false);
   const feed = doc.feed as Record<string, unknown> | undefined;
-  if (feed && typeof feed === 'object') {
-    return list(feed.entry).filter((e) => e && typeof e === 'object').map((e) => entryOf(e as Record<string, unknown>, true));
-  }
+  if (feed && typeof feed === 'object') return take(feed.entry, true);
   throw new SourceFailure('not-a-feed', 'the document has no RSS, RDF or Atom root element');
+}
+
+// The kept entries only (the measurement script's form, src/measure).
+export function parseFeed(body: string): FeedEntry[] {
+  return parseFeedItems(body).entries;
 }
