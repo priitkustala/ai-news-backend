@@ -1,6 +1,7 @@
-// The local environment of the command. `node dist/cli.js keys` writes the git-ignored
-// .env.local at the repository root; it is loaded here when present, and a value already
-// set in the process environment wins (the scheduled workflow sets its own).
+// The local environment of the command. `node dist/cli.js keys` writes local.env into the
+// memory folder AI_NEWS_SECRETS_DIR (priitkustala/ai-news#92); it is loaded here when present,
+// then the git-ignored .env.local of a checkout not yet moved fills what is missing, and a
+// value already set in the process environment wins (the scheduled workflow sets its own).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +10,9 @@ export const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.met
 export const localEnvFile = path.join(repositoryRoot, '.env.local');
 
 export function loadLocalEnv(): void {
-  if (fs.existsSync(localEnvFile)) process.loadEnvFile(localEnvFile);
+  const secretsDir = process.env.AI_NEWS_SECRETS_DIR;
+  const files = [...(secretsDir ? [path.join(secretsDir, 'local.env')] : []), localEnvFile];
+  for (const file of files) if (fs.existsSync(file)) process.loadEnvFile(file);
 }
 
 export function requireEnv(name: string): string {

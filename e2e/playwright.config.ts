@@ -2,10 +2,12 @@ import { defineConfig, devices } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 
-// The local test environment's bindings (priitkustala/ai-news#40): `node dist/cli.js keys`
-// writes them into the git-ignored ../.env.local; a value already set in the environment wins.
-const localEnv = path.resolve(__dirname, '..', '.env.local');
-if (fs.existsSync(localEnv)) process.loadEnvFile(localEnv);
+// The local test environment's bindings (priitkustala/ai-news#40, #92): `node dist/cli.js keys` writes them
+// into local.env in the memory folder AI_NEWS_SECRETS_DIR; a checkout not yet moved keeps the git-ignored
+// ../.env.local; a value already set in the environment wins.
+const secretsDir = process.env.AI_NEWS_SECRETS_DIR;
+const localEnvFiles = [...(secretsDir ? [path.join(secretsDir, 'local.env')] : []), path.resolve(__dirname, '..', '.env.local')];
+for (const file of localEnvFiles) if (fs.existsSync(file)) process.loadEnvFile(file);
 
 // The address of the locally running app. The run wrapper sets E2E_BASE_URL;
 // the fallback is only for running by hand.

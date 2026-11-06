@@ -23,7 +23,7 @@ the host, because the box has no container engine. `<compose>` stands for
 |---|---|---|
 | Install | box | `npm ci --ignore-scripts` and `cd e2e && npm ci` |
 | Build and type check | box | `npm run build` |
-| Local keys, once | box | `node dist/cli.js keys` (writes the git-ignored `.env.local` and `.env.stack-*`; never overwrites) |
+| Local keys, once | box | `node dist/cli.js keys` (writes `local.env` and the stack's files into the memory folder `AI_NEWS_SECRETS_DIR`, `/run/ai-news-secrets`, the tmpfs volume `stack-secrets`, never on the host disk; never overwrites; refuses when the variable is unset). The volume empties when the project's last container stops: then keys, step 7 (the first-start row below) and migrate |
 | Start the stack (priitkustala/ai-news#40) | host, Git Bash, this folder (or start the box with `sandbox`, which starts the services with the workload) | `docker compose -p ai-news-backend_devcontainer -f .devcontainer/docker-compose.yml -f .devcontainer/docker-compose.override.yml up -d --wait ai-news-db ai-news-auth ai-news-rest ai-news-api ai-news-feeds ai-news-commands` |
 | Migrate, create the personas and load the base seed | box | `node dist/cli.js migrate` (safe to run again) |
 | Stack state | host | `<compose> ps` |
@@ -50,17 +50,17 @@ build and test in parallel without sharing a database. `<folder>` is `ai-news-ba
 `AI_NEWS_FRONTEND` names the paired frontend working copy that `ai-news-commands` mounts
 read-only at `/workspaces/<copy>` for the `scan-secrets` relay (unset: the `ai-news-frontend`
 folder); the host instance scripts set these variables.
-Never run `<icompose> config`: it prints the local keys. A frontend instance pairs with one
-backend instance (see `ai-news-frontend`'s `AGENTS.md`).
+`<icompose> config` prints no keys on a copy of this form, since they stand in the memory volume;
+never run it on an older copy whose override still has `env_file` lines: it prints the local keys there.
+A frontend instance pairs with one backend instance (see `ai-news-frontend`'s `AGENTS.md`).
 
 | Task | Where | Command |
 |---|---|---|
 | Create | host, Git Bash, the project folder | `git clone --no-hardlinks --no-checkout --branch main ai-news-backend <folder>`, then in `<folder>`: `git fetch --no-tags ../ai-news-backend "+refs/remotes/origin/main:refs/remotes/origin/main"`, `git remote set-url origin https://github.com/priitkustala/ai-news-backend.git`, `git reset --hard refs/remotes/origin/main` (GitHub main as the checkout knows it; no git network command) |
-| First start: key placeholders | host, `<folder>` | `[ -e .env.stack-db ] \|\| printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 16)" > .env.stack-db` and `for f in auth rest api; do [ -e .env.stack-$f ] \|\| : > .env.stack-$f; done` (the box does not start while a file is missing, and the database does not initialise without a password; nothing is printed) |
 | Start the box and its stack | host, `<folder>` | `AI_NEWS_NETWORK=<folder>-local AI_NEWS_CLAUDE_VOLUME=instance-claude-config AI_NEWS_CODEX_VOLUME=instance-codex-config sandbox` (the box mounts the instance's own Claude and Codex configuration volumes `<folder>_devcontainer_instance-claude-config` and `<folder>_devcontainer_instance-codex-config`, priitkustala/ai-news#69) |
 | Branch | box | `git fetch origin --prune`, `git switch -c <issue>-<slug> --no-track origin/main` |
 | Install and build | box | as above |
-| Local keys, first start | box | `rm -f .env.stack-db .env.stack-auth .env.stack-rest .env.stack-api && node dist/cli.js keys` (the placeholders go first: keys writes nothing while any of its files exists); done at `keys: wrote .env.local, .env.stack-db, .env.stack-auth, .env.stack-rest, .env.stack-api`. Do not start the box again until keys has run |
+| Local keys, first start | box | `node dist/cli.js keys`; done at `keys: wrote local.env, stack-db.env, stack-auth.env, rest-db-uri, rest-jwt-secret, stack-api.env` |
 | First start: the stack on the new keys | host, `<folder>` | `<icompose> rm -s -f -v ai-news-db`, `docker volume rm <folder>_devcontainer_ai-news-db-data`, `<icompose> up -d --wait --force-recreate ai-news-db ai-news-auth ai-news-rest ai-news-api ai-news-feeds ai-news-commands` |
 | Migrate, seed, sign-in, scenarios | box | as above: `node dist/cli.js migrate`, `node dist/cli.js seed <fixture-set> <run-marker>`, `node dist/cli.js sign-in owner`, `cd e2e && npx playwright test --project=api --grep "@story-<n>"` |
 | Start the stack again | host, `<folder>` | `<icompose> up -d --wait ai-news-db ai-news-auth ai-news-rest ai-news-api ai-news-feeds ai-news-commands` |

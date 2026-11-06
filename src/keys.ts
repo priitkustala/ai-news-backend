@@ -2,11 +2,12 @@
 // the database passwords, the JWT secret shared by Supabase Auth and PostgREST, the anon
 // and service_role tokens signed with it, and the opaque publishable and secret keys the
 // gateway translates into those tokens. Every value is random and local; none is ever the
-// hosted project's. The files are git-ignored (`.env` and `.env.*`) and never overwritten.
+// hosted project's. The files go into the memory folder AI_NEWS_SECRETS_DIR, never on a disk
+// (priitkustala/ai-news#92), and are never overwritten; a stop empties the folder.
 import { createHmac, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { localEnvFile, repositoryRoot } from './env.js';
+import { repositoryRoot } from './env.js';
 
 export const SUPABASE_URL = 'http://ai-news-api:8000';
 export const FIXTURE_FEED_BASE_URL = 'http://ai-news-feeds:8081';
@@ -34,6 +35,11 @@ function envFile(header: string, values: Record<string, string>): string {
 }
 
 export function generateKeys(): { written: string[]; kept: string[] } {
+  const dir = process.env.AI_NEWS_SECRETS_DIR;
+  if (!dir) {
+    process.stderr.write('keys: AI_NEWS_SECRETS_DIR is not set; the keys stay in memory, never in this folder\n');
+    process.exit(1);
+  }
   const postgresPassword = token(24);
   const ingestPassword = token(24);
   const jwtSecret = token(48);
@@ -45,7 +51,7 @@ export function generateKeys(): { written: string[]; kept: string[] } {
   const secretKey = `sb_secret_${token(24)}`;
 
   const files: Record<string, string> = {
-    [localEnvFile]: envFile('ai-news-backend command and scenario runs', {
+    [path.join(dir, 'local.env')]: envFile('ai-news-backend command and scenario runs', {
       MIGRATION_DATABASE_URL: `postgres://postgres:${postgresPassword}@${DATABASE_HOST}`,
       DATABASE_URL: `postgres://ingest_job:${ingestPassword}@${DATABASE_HOST}`,
       INGEST_DB_PASSWORD: ingestPassword,
@@ -60,19 +66,18 @@ export function generateKeys(): { written: string[]; kept: string[] } {
       E2E_OD08: 'undecided',
       E2E_RUN_TIME_ZONE: 'UTC',
     }),
-    [path.join(repositoryRoot, '.env.stack-db')]: envFile('ai-news-db', {
+    [path.join(dir, 'stack-db.env')]: envFile('ai-news-db', {
       POSTGRES_PASSWORD: postgresPassword,
       PGPASSWORD: postgresPassword,
     }),
-    [path.join(repositoryRoot, '.env.stack-auth')]: envFile('ai-news-auth', {
+    [path.join(dir, 'stack-auth.env')]: envFile('ai-news-auth', {
       GOTRUE_DB_DATABASE_URL: `postgres://supabase_auth_admin:${postgresPassword}@${DATABASE_HOST}`,
       GOTRUE_JWT_SECRET: jwtSecret,
     }),
-    [path.join(repositoryRoot, '.env.stack-rest')]: envFile('ai-news-rest', {
-      PGRST_DB_URI: `postgres://authenticator:${postgresPassword}@${DATABASE_HOST}`,
-      PGRST_JWT_SECRET: jwtSecret,
-    }),
-    [path.join(repositoryRoot, '.env.stack-api')]: envFile('ai-news-api', {
+    // Raw values, read by the REST program itself through stack/secrets/postgrest.conf: its image has no shell.
+    [path.join(dir, 'rest-db-uri')]: `postgres://authenticator:${postgresPassword}@${DATABASE_HOST}`,
+    [path.join(dir, 'rest-jwt-secret')]: jwtSecret,
+    [path.join(dir, 'stack-api.env')]: envFile('ai-news-api', {
       PUBLISHABLE_KEY: publishableKey,
       SECRET_KEY: secretKey,
       ANON_JWT: anonJwt,
@@ -83,8 +88,8 @@ export function generateKeys(): { written: string[]; kept: string[] } {
   // All or nothing: the files share one set of values, so a partial set is never topped up.
   const existing = Object.keys(files).filter((file) => fs.existsSync(file));
   if (existing.length > 0) {
-    return { written: [], kept: existing.map((file) => path.relative(repositoryRoot, file)) };
+    return { written: [], kept: existing.map((file) => path.basename(file)) };
   }
   for (const [file, content] of Object.entries(files)) fs.writeFileSync(file, content, { mode: 0o600 });
-  return { written: Object.keys(files).map((file) => path.relative(repositoryRoot, file)), kept: [] };
+  return { written: Object.keys(files).map((file) => path.basename(file)), kept: [] };
 }
