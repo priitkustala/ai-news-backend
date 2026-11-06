@@ -120,6 +120,16 @@ function baseSources(ctx: SeedContext): SourceRow[] {
   ];
 }
 
+// What a run ingests from the base feeds: their addresses carry no run marker, so the fixture server fills in the word fixture.
+const BASE_FEED_ENTRIES = [
+  { link: 'https://openai.com/ai-news-fixture/fixture-release', title: 'fixture synthetic model release' },
+  { link: 'https://www.federalregister.gov/ai-news-fixture/fixture-rule', title: 'fixture synthetic proposed rule on AI' },
+  { link: 'https://techcrunch.com/ai-news-fixture/fixture-round', title: 'fixture synthetic AI startup raises a round' },
+  { link: 'https://techcrunch.com/ai-news-fixture/fixture-tool', title: 'fixture synthetic developer tool launch' },
+  { link: 'https://simonwillison.net/ai-news-fixture/fixture', title: 'fixture synthetic notes on an LLM tool' },
+  { link: 'https://www.anthropic.com/news/ai-news-fixture-fixture', title: 'fixture-mirror synthetic announcement' },
+];
+
 // The base seed: items in every category but Research (the one empty category), one item
 // with a broken image address, mirror-shaped items without a summary, and a last completed
 // run older than a day (the Stale state).
@@ -402,7 +412,11 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   'AC-03b': (ctx) => ({
     sources: [source('fixture-hostile-links', 'Fixture feed with a javascript link', fixtureFeed(ctx, 'hostile-links.xml'))],
     manifest: (set) => ({
-      feed_links: [...set.items.map((row) => row.canonical_url), `https://hostile.example.com/ai-news-fixture/${ctx.run}-hostile-ok`],
+      feed_links: [
+        ...set.items.map((row) => row.canonical_url),
+        ...BASE_FEED_ENTRIES.map((entry) => entry.link),
+        `https://hostile.example.com/ai-news-fixture/${ctx.run}-hostile-ok`,
+      ],
     }),
   }),
   'AC-09': (ctx, set) => ({
@@ -529,7 +543,9 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   }),
   'AC-26b': (ctx) => ({
     sources: [redditSource(ctx, 'artificial')],
-    manifest: (set) => ({ feed_titles: [...set.items.map((row) => row.title), `${ctx.run}-reddit-admitted synthetic post`] }),
+    manifest: (set) => ({
+      feed_titles: [...set.items.map((row) => row.title), ...BASE_FEED_ENTRIES.map((entry) => entry.title), `${ctx.run}-reddit-admitted synthetic post`],
+    }),
   }),
   'AC-26d': (ctx) => {
     const reddit = redditSource(ctx, 'artificial');
@@ -547,7 +563,7 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
     return {
       sources: [redditSource(ctx, empty, { omit: 'admitted' }), redditSource(ctx, 'artificial')],
       manifest: (set) => ({
-        feed_titles: [...set.items.map((row) => row.title), `${ctx.run}-reddit-admitted synthetic post`],
+        feed_titles: [...set.items.map((row) => row.title), ...BASE_FEED_ENTRIES.map((entry) => entry.title), `${ctx.run}-reddit-admitted synthetic post`],
         feed_communities: ['r/artificial'],
       }),
     };
