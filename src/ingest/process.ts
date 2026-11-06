@@ -1,6 +1,8 @@
 // The processing step of the ingestion job (S-02, priitkustala/ai-news-backend#1; S-03,
 // priitkustala/ai-news-backend#2; S-04, priitkustala/ai-news-backend#3): each collected feed
-// entry becomes an item row. An entry without a title or an http(s) link is counted and
+// entry becomes an item row. Markup is stripped from the title before it is judged (S-11,
+// priitkustala/ai-news#47; B-03), so a stored title is plain text and is the text that was
+// judged. An entry without a title (after stripping) or an http(s) link is counted and
 // dropped; the canonical address is the link without its fragment and without `utm_*`
 // parameters (S-04, src/process/dedupe.ts), and the id is its SHA-256 (as in the seed); of two
 // entries of one feed with the same canonical address the earlier is kept; a source whose
@@ -15,7 +17,7 @@ import { relevance, type RelevanceMethod } from '../process/relevance.js';
 import { categorise, type CategoryMethod } from '../process/category.js';
 import type { Category } from '../process/category-rules.js';
 
-export const PROCESSING_VERSION = 's-04.1';
+export const PROCESSING_VERSION = 's-11.1';
 export const SUMMARY_MAX_CHARS = 1000;
 
 export type ProcessSource = { id: string; source_type: string; display_policy: string; default_categories: string[] | null };
@@ -49,7 +51,8 @@ export function processEntries(source: ProcessSource, entries: FeedEntry[]): { i
   let dropped = 0;
   for (const entry of entries) {
     const url = canonicalUrl(entry.link);
-    if (!url || !entry.title) {
+    const title = plainText(entry.title);
+    if (!url || !title) {
       dropped += 1;
       continue;
     }
@@ -65,7 +68,7 @@ export function processEntries(source: ProcessSource, entries: FeedEntry[]): { i
       id: createHash('sha256').update(url).digest('hex'),
       canonical_url: url,
       source_id: source.id,
-      title: entry.title,
+      title,
       published_at,
       summary,
     };

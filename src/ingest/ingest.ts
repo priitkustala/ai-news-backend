@@ -18,7 +18,10 @@
 // command says so and exits 1 without a run report. A read that fails after the run's writes
 // committed (the stored-item count of the report) changes nothing in the database: the run
 // stays as committed, the report carries item_count null and report_error, and the command
-// exits 3 (report incomplete). The run report
+// exits 3 (report incomplete). An item rejected while it was collected (over the per-item
+// limit, S-11) is counted in `fetched`, not in `processed`, never fails its source, and is
+// recorded as counts.rejected (source_id and reason) and reported as `rejected` by every
+// start, the dry run included. The run report
 // is the last line of standard output; the log names counts and ids only (Locked R-21).
 import { UsageError } from '../env.js';
 import { inTransaction, withClient, type Client } from '../db.js';
@@ -57,7 +60,8 @@ const sqlState = (error: unknown) => {
 };
 
 type Source = CollectSource & { display_policy: string; default_categories: string[] | null; source_weight: number };
-type RunRow = { id: string; status: string; counts: Record<string, number>; source_errors: RunReport['source_errors'] };
+type RunCounts = { fetched?: number; processed?: number; rejected?: RunReport['rejected'] } & Record<string, unknown>;
+type RunRow = { id: string; status: string; counts: RunCounts; source_errors: RunReport['source_errors'] };
 
 // The advisory lock space of the job: (LOCK_CLASS, days since 1970-01-01 of the run date).
 const LOCK_CLASS = 20_502;
@@ -100,6 +104,7 @@ async function collectAndProcess(sources: Source[], log: (line: string) => void)
   const collected = await collect(sources);
   const items: ItemToStore[] = [];
   const sourceErrors: RunReport['source_errors'] = [];
+  const rejected: RunReport['rejected'] = [];
   let fetched = 0;
   let dropped = 0;
   let notRelevant = 0;
@@ -109,7 +114,11 @@ async function collectAndProcess(sources: Source[], log: (line: string) => void)
       log(`ingest: source ${result.source_id} failed (${errorKind(result.error)})`);
       continue;
     }
-    fetched += result.entries.length;
+    fetched += result.entries.length + result.rejected.length;
+    if (result.rejected.length) {
+      rejected.push(...result.rejected.map((reason) => ({ source_id: result.source_id, reason })));
+      log(`ingest: source ${result.source_id}: ${result.rejected.length} item(s) rejected (${[...new Set(result.rejected.map(errorKind))].join(', ')})`);
+    }
     const source = sources.find((s) => s.id === result.source_id) as Source;
     const processed = processEntries(source, result.entries);
     items.push(...processed.items);
@@ -127,13 +136,14 @@ async function collectAndProcess(sources: Source[], log: (line: string) => void)
   for (const skip of collected.skipped) log(`ingest: source ${skip.source_id} skipped (not a feed source)`);
   const feeds = collected.results.length;
   const status = feeds > 0 && sourceErrors.length === feeds ? 'failed' : sourceErrors.length > 0 ? 'partial' : 'completed';
-  return { status, items, weightOf, sourceErrors, requests: collected.requests, fetched, dropped, notRelevant, feeds, skipped: collected.skipped.length };
+  return { status, items, weightOf, sourceErrors, rejected, requests: collected.requests, fetched, dropped, notRelevant, feeds, skipped: collected.skipped.length };
 }
 
 function countsOf(work: Awaited<ReturnType<typeof collectAndProcess>>, added: number, processing?: ProcessingCounts, replaced?: number) {
   return {
     sources: work.feeds, sources_failed: work.sourceErrors.length, sources_skipped: work.skipped,
     fetched: work.fetched, processed: work.items.length, dropped: work.dropped, not_relevant: work.notRelevant, added,
+    rejected: work.rejected,
     ...(replaced === undefined ? {} : { replaced }),
     ...(processing ? { clusters: processing.clusters, duplicates_not_shown: processing.hidden, arxiv_capped: processing.arxiv_capped } : {}),
   };
@@ -155,11 +165,11 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
       const itemCount = await storedItemCount(client);
       log(`ingest: dry run ${work.status}: fetched ${work.fetched}, processed ${work.items.length}, not AI-relevant ${work.notRelevant}, `
         + `would add ${work.items.length - known}, `
-        + `failed sources ${work.sourceErrors.length}, stored items ${itemCount}; nothing was written`);
+        + `failed sources ${work.sourceErrors.length}, rejected items ${work.rejected.length}, stored items ${itemCount}; nothing was written`);
       return {
         run_id: existing?.id ?? null, run_date: runDate, status: work.status, dry_run: true,
         fetched_count: work.fetched, processed_count: work.items.length, item_count: itemCount,
-        source_errors: work.sourceErrors, rejected: [], requests: work.requests,
+        source_errors: work.sourceErrors, rejected: work.rejected, requests: work.requests,
       };
     }
 
@@ -170,7 +180,7 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
       return {
         run_id: current?.id ?? null, run_date: runDate, status: current?.status ?? 'running', dry_run: false,
         fetched_count: 0, processed_count: 0, item_count: await storedItemCount(client),
-        source_errors: current?.source_errors ?? [], rejected: [], requests: [],
+        source_errors: current?.source_errors ?? [], rejected: current?.counts.rejected ?? [], requests: [],
       };
     }
     try {
@@ -181,7 +191,7 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
         return {
           run_id: existing.id, run_date: runDate, status: existing.status, dry_run: false,
           fetched_count: existing.counts.fetched ?? 0, processed_count: existing.counts.processed ?? 0, item_count: itemCount,
-          source_errors: existing.source_errors, rejected: [], requests: [],
+          source_errors: existing.source_errors, rejected: existing.counts.rejected ?? [], requests: [],
         };
       }
 
@@ -275,7 +285,7 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
         return {
           run_id: runId, run_date: runDate, status: 'failed', dry_run: false,
           fetched_count: work?.fetched ?? 0, processed_count: work?.items.length ?? 0, item_count: itemCount,
-          source_errors: work?.sourceErrors ?? [], rejected: [], requests: work?.requests ?? [], error: runError,
+          source_errors: work?.sourceErrors ?? [], rejected: work?.rejected ?? [], requests: work?.requests ?? [], error: runError,
           ...(reportError ? { report_error: reportError } : {}),
         };
       }
@@ -284,11 +294,11 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
       const { itemCount, reportError } = await reportedItemCount(client, runId, runDate, log);
       log(`ingest: run ${runId} of ${runDate} ended ${work.status}: fetched ${work.fetched}, processed ${work.items.length}, `
         + `not AI-relevant ${work.notRelevant}, added ${added}, `
-        + `failed sources ${work.sourceErrors.length}, stored items ${itemCount ?? 'unknown'}`);
+        + `failed sources ${work.sourceErrors.length}, rejected items ${work.rejected.length}, stored items ${itemCount ?? 'unknown'}`);
       return {
         run_id: runId, run_date: runDate, status: work.status, dry_run: false,
         fetched_count: work.fetched, processed_count: work.items.length, item_count: itemCount,
-        source_errors: work.sourceErrors, rejected: [], requests: work.requests,
+        source_errors: work.sourceErrors, rejected: work.rejected, requests: work.requests,
         ...(reportError ? { report_error: reportError } : {}),
       };
     } finally {
