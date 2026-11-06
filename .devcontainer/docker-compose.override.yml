@@ -9,6 +9,7 @@
 services:
   workload:
     environment:
+      AI_NEWS_SECRETS_DIR: /run/ai-news-secrets   # this stack's keys, in the memory volume (priitkustala/ai-news#92)
       # No telemetry, error reporting or feature-flag fetch from the box
       # (priitkustala/ai-news#69, Anthropic's dev container guidance).
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
@@ -29,18 +30,21 @@ services:
       # targets as docker-compose.yml, so these entries replace its two.
       - ${AI_NEWS_CLAUDE_VOLUME:-claude-config}:/home/node/.claude
       - ${AI_NEWS_CODEX_VOLUME:-codex-config}:/home/node/.codex
+      # This stack's keys live in memory only (priitkustala/ai-news#92): writable here, read-only in the services.
+      - stack-secrets:/run/ai-news-secrets
 
   # The local test environment (priitkustala/ai-news#40): the seeded PostgreSQL
   # database, the local Supabase interface (Supabase Auth and PostgREST behind the
   # Envoy API gateway) and the fixture feed server. Every service is on the
   # `internal` network only: no egress, no published host port. Local keys only,
-  # generated in the box by `node dist/cli.js keys` into the git-ignored
-  # ../.env.stack-* files; never the hosted project's.
+  # generated in the box by `node dist/cli.js keys` into the memory volume
+  # stack-secrets, read by each service at its start (priitkustala/ai-news#92);
+  # never the hosted project's.
   ai-news-db:
     image: supabase/postgres:17.11.0.003@sha256:7374d196da7e301512cc5329e18040e0f7bb856287b323777cdadecccbc6c7e4
     restart: unless-stopped
     command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "log_min_messages=fatal"]
-    env_file: ../.env.stack-db
+    entrypoint: ["/bin/sh", "/stack/secrets/start-db.sh", "docker-entrypoint.sh"]
     environment:
       POSTGRES_HOST: /var/run/postgresql
       PGPORT: "5432"
@@ -50,6 +54,8 @@ services:
     volumes:
       - ../stack/db/99-roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
       - ai-news-db-data:/var/lib/postgresql/data
+      - stack-secrets:/run/ai-news-secrets:ro
+      - ../stack/secrets:/stack/secrets:ro
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
       interval: 5s
@@ -64,7 +70,7 @@ services:
     depends_on:
       ai-news-db:
         condition: service_healthy
-    env_file: ../.env.stack-auth
+    entrypoint: ["/bin/sh", "/stack/secrets/start.sh", "stack-auth.env", "auth"]
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: "9999"
@@ -91,6 +97,9 @@ services:
       # Local only: the scenario suite signs in about 60 times a run, above the default
       # token limit (150 per 5 minutes, burst 30); authorisation is unchanged.
       GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "1800"
+    volumes:
+      - stack-secrets:/run/ai-news-secrets:ro
+      - ../stack/secrets:/stack/secrets:ro
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
       interval: 5s
@@ -105,7 +114,7 @@ services:
     depends_on:
       ai-news-db:
         condition: service_healthy
-    env_file: ../.env.stack-rest
+    command: ["postgrest", "/stack/secrets/postgrest.conf"]
     environment:
       PGRST_DB_SCHEMAS: public
       PGRST_DB_EXTRA_SEARCH_PATH: public
@@ -114,6 +123,9 @@ services:
       PGRST_DB_USE_LEGACY_GUCS: "false"
       PGRST_ADMIN_SERVER_PORT: "3001"
       PGRST_ADMIN_SERVER_HOST: localhost
+    volumes:
+      - stack-secrets:/run/ai-news-secrets:ro
+      - ../stack/secrets:/stack/secrets:ro
     healthcheck:
       test: ["CMD", "postgrest", "--ready"]
       interval: 5s
@@ -128,10 +140,11 @@ services:
     depends_on:
       - ai-news-auth
       - ai-news-rest
-    env_file: ../.env.stack-api
-    entrypoint: ["/bin/sh", "/stack/envoy/entrypoint.sh"]
+    entrypoint: ["/bin/sh", "/stack/secrets/start.sh", "stack-api.env", "/bin/sh", "/stack/envoy/entrypoint.sh"]
     volumes:
       - ../stack/envoy:/stack/envoy:ro
+      - stack-secrets:/run/ai-news-secrets:ro
+      - ../stack/secrets:/stack/secrets:ro
     healthcheck:
       test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/127.0.0.1/8000'"]
       interval: 5s
@@ -174,9 +187,11 @@ services:
     command: ["node", "/srv/backend/stack/commands/server.mjs"]
     environment:
       COMMANDS_PORT: "8090"
+      AI_NEWS_SECRETS_DIR: /run/ai-news-secrets
     volumes:
       - ..:/srv/backend:ro
       - node-modules:/srv/backend/node_modules:ro
+      - stack-secrets:/run/ai-news-secrets:ro
       # AI_NEWS_FRONTEND names the paired frontend working copy (unset for the repository
       # folder, which pairs with ai-news-frontend; the host scripts set ai-news-frontend-<key>).
       # Read-only, for the scan-secrets relay of AC-20e (priitkustala/ai-news#43); the relay
@@ -202,6 +217,13 @@ networks:
 
 volumes:
   ai-news-db-data: {}
+  # This stack's keys, in memory only (priitkustala/ai-news#92): compose-owned, named <project>_stack-secrets,
+  # shared by the project's containers and emptied when the last of them stops. Recovery: keys, then step 7.
+  stack-secrets:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=1m,uid=1000"
   # Per-instance Claude and Codex configuration volumes (priitkustala/ai-news#69):
   # compose-owned, named <project>_instance-claude-config and
   # <project>_instance-codex-config, deleted by `down -v` with the instance; used

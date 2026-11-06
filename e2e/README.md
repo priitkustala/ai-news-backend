@@ -16,26 +16,27 @@ Filled by the environment bootstrap story (priitkustala/ai-news#40) with the rea
 The rows above are the repository folder form. A story's own instance (priitkustala/ai-news#65), the
 separate clone `<folder>` = `ai-news-backend-<key>` with its own stack and pair network
 `<folder>-local`, uses the same commands in its own box at `/workspaces/<folder>`; only the stack
-commands on the host change (first start, keys order and removal: `../AGENTS.md`, Build, Test, Run,
+commands on the host change (first start, keys in the memory folder and removal: `../AGENTS.md`, Build, Test, Run,
 A story's own instance). `<icompose>` stands for, from `<folder>` on the host,
 `AI_NEWS_NETWORK=<folder>-local docker compose -p <folder>_devcontainer -f .devcontainer/docker-compose.yml -f .devcontainer/docker-compose.override.yml`.
 
 | Step | Command | Address |
 |---|---|---|
-| Start the app locally (instance) | host: `AI_NEWS_NETWORK=<folder>-local sandbox` from `<folder>` (or `<icompose> up -d --wait ai-news-db ai-news-auth ai-news-rest ai-news-api ai-news-feeds ai-news-commands`); then box: `node dist/cli.js migrate` | the same names as above, reachable only on that instance's own networks: `http://ai-news-api:8000`, `http://ai-news-feeds:8081`, `ai-news-db:5432` |
+| Start the app locally (instance) | host: `AI_NEWS_NETWORK=<folder>-local sandbox` from `<folder>` (or `<icompose> up -d --wait ai-news-db ai-news-auth ai-news-rest ai-news-api ai-news-feeds ai-news-commands`); then box: `node dist/cli.js migrate`. A start before `keys` stands on the `start:` line until keys and the first-start step have run | the same names as above, reachable only on that instance's own networks: `http://ai-news-api:8000`, `http://ai-news-feeds:8081`, `ai-news-db:5432` |
 | Seed synthetic data (instance) | box of `<folder>`: `node dist/cli.js seed <fixture-set> <run-marker>` | |
 | Development-only sign-in (instance) | box of `<folder>`: `node dist/cli.js sign-in owner` (or `second-user`) | |
 
 ## Variables the scenarios read
 
-`node dist/cli.js keys` (run once in the backend box, from the repository root) writes them into the
-git-ignored `.env.local` at the repository root; `e2e/playwright.config.ts` loads that file, and a
-value already set in the environment wins (priitkustala/ai-news#40).
+`node dist/cli.js keys` (run once in the backend box, from the repository root) writes them into
+`local.env` in the memory folder `AI_NEWS_SECRETS_DIR`; `e2e/playwright.config.ts` loads that file, then a
+`.env.local` of a checkout not yet moved, and a value set in the environment wins
+(priitkustala/ai-news#40, #92).
 
 | Name | Value |
 |---|---|
 | `E2E_DATA_URL` | `http://ai-news-api:8000/rest/v1` (the local Supabase interface's Data API, through the gateway) |
-| `E2E_PUBLISHABLE_KEY` | the local publishable key: the value `node dist/cli.js keys` wrote into `.env.local` (never the hosted project's, never committed) |
+| `E2E_PUBLISHABLE_KEY` | the local publishable key: the value `node dist/cli.js keys` wrote into `local.env` (never the hosted project's, never committed) |
 | `E2E_BACKEND_COMMAND` | `node /workspaces/ai-news-backend/dist/cli.js` (built by `npm run build`; in an instance `node /workspaces/<folder>/dist/cli.js`, as `keys` writes it there) |
 | `E2E_FIXTURE_FEED_URL` | `http://ai-news-feeds:8081/feeds/techcrunch-ai.xml` (the fixture feed server) |
 | `E2E_OD08` | `undecided` (OD-08 is open) |
