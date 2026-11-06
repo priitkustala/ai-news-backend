@@ -12,6 +12,7 @@ services:
       # No telemetry, error reporting or feature-flag fetch from the box
       # (priitkustala/ai-news#69, Anthropic's dev container guidance).
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+      NPM_CONFIG_USERCONFIG: /dev/shm/npmrc   # the npm credential the boot check writes stays in memory (priitkustala/ai-news#91)
     volumes:
       # Team context (front door, testing rules, team memory), read-only. Writes to
       # team memory leave the box only as a reviewed pull request.
