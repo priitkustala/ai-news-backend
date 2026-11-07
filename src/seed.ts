@@ -1,7 +1,8 @@
 // `seed <fixture-set> <run-marker>`: resets the run records, the source configuration, the
-// stored items and the bookmarks to the base seed plus the named fixture set, and prints the
-// fixture manifest as the last line (tests/README-testids.md, Isolation). Runs with the
-// migration role: the seed is the local environment's set-up, not the job.
+// stored items, the bookmarks and the push subscriptions to the base seed plus the named
+// fixture set, and prints the fixture manifest as the last line (tests/README-testids.md,
+// Isolation). Runs with the migration role: the seed is the local environment's set-up, not
+// the job.
 import { requireEnv, UsageError } from './env.js';
 import { inTransaction, withClient, type Client } from './db.js';
 import { fixtureSet, fixtureSetNames, type FixtureSet } from './seed-data.js';
@@ -14,6 +15,7 @@ const RUN_MARKER = /^[A-Za-z0-9][A-Za-z0-9-]{0,62}$/;
 export async function loadSet(client: Client, set: FixtureSet, windowEnd: Date = new Date()): Promise<void> {
   await inTransaction(client, async () => {
     await client.query('delete from public.bookmarks');
+    await client.query('delete from public.push_subscriptions');
     await client.query('delete from public.ingestion_runs');
     await client.query('delete from public.items');
     await client.query('delete from app_private.sources');
