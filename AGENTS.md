@@ -134,6 +134,7 @@ the project folder, next to `ai-news-team-context/`.
   run `sandbox` from this folder in Git Bash. On the host, commands and file changes
   are reviewed before they run.
 - orchestrators run box agents of any agent CLI by the team skill run-agents-in-dev-container.
+- a box agent of Codex CLI runs with the launcher's parameter AI_NEWS_BOX_CLI=codex and is evaluated by Claude Code.
 - `.devcontainer/` belongs to this repository. The egress allowlist is the
   `x-extra-allowed-domains` anchor in `.devcontainer/docker-compose.yml` and changes
   only through a reviewed diff. Additions so far: `auth.openai.com`, `chatgpt.com`, `api.openai.com` (the second-vendor agent).
