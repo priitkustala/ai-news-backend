@@ -77,4 +77,5 @@ npx playwright test                           # full suite
 | filter-category | `@journey-filter-category` | The owner reads the category list with counts and narrows the feed to one category. Rows here: AC-06. |
 | ingest | `@journey-ingest` | A daily ingestion run collects, processes, stores and retains items through the job command. Rows here: AC-01a, AC-01b, AC-01c, AC-02a, AC-02b, AC-03c, AC-03d, AC-03e, AC-04, AC-05, AC-07a, AC-07b, AC-22a, AC-22b, AC-22c, AC-26c, AC-27a, AC-27c, AC-28c, AC-28d. |
 | measure | `@journey-measure` | The feed-quality measurement script runs on the frozen validation sample and reports each metric. Rows here: AC-25. |
+| push | `@journey-push` | One push notification per run date reaches the owner's subscription, and a rerun sends none. Rows here: B-14. |
 | read-feed | `@journey-read-feed` | The owner opens and reads the headline feed and its states (last-updated, Stale, Error). Rows here: AC-08, AC-21a. |
