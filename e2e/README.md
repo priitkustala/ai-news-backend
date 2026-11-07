@@ -39,7 +39,7 @@ A story's own instance). `<icompose>` stands for, from `<folder>` on the host,
 | `E2E_PUBLISHABLE_KEY` | the local publishable key: the value `node dist/cli.js keys` wrote into `local.env` (never the hosted project's, never committed) |
 | `E2E_BACKEND_COMMAND` | `node /workspaces/ai-news-backend/dist/cli.js` (built by `npm run build`; in an instance `node /workspaces/<folder>/dist/cli.js`, as `keys` writes it there) |
 | `E2E_FIXTURE_FEED_URL` | `http://ai-news-feeds:8081/feeds/techcrunch-ai.xml` (the fixture feed server) |
-| `E2E_OD08` | `undecided` (OD-08 is open) |
+| `E2E_OD08` | `push` (OD-08 decided: push) |
 | `E2E_RUN_TIME_ZONE` | `UTC` (a test variable; OD-09 stays open) |
 
 ## Run
