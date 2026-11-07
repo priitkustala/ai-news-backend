@@ -4,10 +4,13 @@
 // (running, partial, failed or abandoned) takes the same run over and completes it. A run of
 // an earlier date left `running` by an interrupted job is marked `abandoned`. Every enabled
 // source is collected on its own (module collect); the run ends `completed`, `partial` when
-// some sources failed, or `failed` when every source failed, and stored items are never
-// removed. A copy of a stored item's canonical address takes over that item's row (its id
-// stays) only when it wins under B-07 (a higher source weight, or the same and an earlier
-// time); otherwise it changes nothing. In the same transaction as the run's new items, every
+// some sources failed, or `failed` when every source failed. Stored items are removed only by
+// retain (B-22): those of a source no longer configured and those older than the retention
+// window, never a bookmarked one; it runs in the run's write transaction before the
+// processing below, and not at a failed run (src/retain/retain.ts). A copy of a stored
+// item's canonical address takes over that item's row (its id stays) only when it wins
+// under B-07 (a higher source weight, or the same and an earlier time); otherwise it changes
+// nothing. In the same transaction as the run's new items, every
 // stored item is clustered again with the earlier ones, scored, and the arXiv items beyond the
 // daily cap marked (S-04,
 // src/process/apply.ts), so the `feed` view shows one representative per cluster by score.
@@ -30,6 +33,7 @@ import { processEntries, PROCESSING_VERSION, type ItemToStore } from './process.
 import { storeOtherShare } from './other-share.js';
 import { representativeOrder } from '../process/dedupe.js';
 import { applyProcessing, type ProcessingCounts } from '../process/apply.js';
+import { retain, type RetentionCounts } from '../retain/retain.js';
 
 export type RunReport = {
   run_id: string | null;
@@ -139,13 +143,16 @@ async function collectAndProcess(sources: Source[], log: (line: string) => void)
   return { status, items, weightOf, sourceErrors, rejected, requests: collected.requests, fetched, dropped, notRelevant, feeds, skipped: collected.skipped.length };
 }
 
-function countsOf(work: Awaited<ReturnType<typeof collectAndProcess>>, added: number, processing?: ProcessingCounts, replaced?: number) {
+function countsOf(
+  work: Awaited<ReturnType<typeof collectAndProcess>>, added: number, processing?: ProcessingCounts, replaced?: number, retention?: RetentionCounts,
+) {
   return {
     sources: work.feeds, sources_failed: work.sourceErrors.length, sources_skipped: work.skipped,
     fetched: work.fetched, processed: work.items.length, dropped: work.dropped, not_relevant: work.notRelevant, added,
     rejected: work.rejected,
     ...(replaced === undefined ? {} : { replaced }),
     ...(processing ? { clusters: processing.clusters, duplicates_not_shown: processing.hidden, arxiv_capped: processing.arxiv_capped } : {}),
+    ...(retention ? { deleted_removed_source: retention.deleted_removed_source, deleted_old: retention.deleted_old } : {}),
   };
 }
 
@@ -212,10 +219,11 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
 
       let work: Awaited<ReturnType<typeof collectAndProcess>> | undefined;
       let added: number;
+      let retention: RetentionCounts | undefined;
       try {
         work = await collectAndProcess(sources, log);
         const done = work;
-        added = await inTransaction(client, async () => {
+        ({ added, retention } = await inTransaction(client, async () => {
           let inserted = 0;
           let replaced = 0;
           for (const item of done.items) {
@@ -249,6 +257,9 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
               else replaced += 1;
             }
           }
+          // B-22: retention before applyProcessing, so clusters, scores and the Other share are
+          // computed on the items that remain; a failed run keeps the stored items (B-02).
+          const deleted = done.status === 'failed' ? undefined : await retain(client);
           const processing = await applyProcessing(client, log);
           if (replaced) log(`ingest: ${replaced} stored item(s) taken over by a copy that represents them under B-07`);
           // B-06: the Other share over the 7 days up to this write, stored with the run; after
@@ -256,10 +267,10 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
           await storeOtherShare(client, runId, null);
           await client.query(
             'update public.ingestion_runs set status = $2, ended_at = now(), counts = $3, source_errors = $4 where id = $1',
-            [runId, done.status, JSON.stringify(countsOf(done, inserted, processing, replaced)), JSON.stringify(done.sourceErrors)],
+            [runId, done.status, JSON.stringify(countsOf(done, inserted, processing, replaced, deleted)), JSON.stringify(done.sourceErrors)],
           );
-          return inserted;
-        });
+          return { added: inserted, retention: deleted };
+        }));
       } catch (error) {
         // The run started but its writes failed: the item writes were rolled back with their
         // transaction, so stored items are as before. The run is recorded `failed` with a safe
@@ -294,6 +305,7 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
       const { itemCount, reportError } = await reportedItemCount(client, runId, runDate, log);
       log(`ingest: run ${runId} of ${runDate} ended ${work.status}: fetched ${work.fetched}, processed ${work.items.length}, `
         + `not AI-relevant ${work.notRelevant}, added ${added}, `
+        + (retention ? `deleted of removed sources ${retention.deleted_removed_source}, deleted past the window ${retention.deleted_old}, ` : '')
         + `failed sources ${work.sourceErrors.length}, rejected items ${work.rejected.length}, stored items ${itemCount ?? 'unknown'}`);
       return {
         run_id: runId, run_date: runDate, status: work.status, dry_run: false,
