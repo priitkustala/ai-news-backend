@@ -1,6 +1,7 @@
 // `scan-secrets <path>...` (priitkustala/ai-news#43, S-05, AC-20d and AC-20e): scans files for
 // strings equal to this stack's seeded secrets (the database passwords, the Supabase secret key
-// and, once a story seeds it, the Reddit app secret) and reports the key kinds a built client
+// and, once a story seeds it, the Reddit app secret; the push signing key, pattern
+// push-signing-key, priitkustala/ai-news#50) and reports the key kinds a built client
 // carries. Values are read from the environment of this checkout (`.env.local`, written by
 // `keys`); the report holds counts, pattern names and paths only, never a value.
 //
@@ -52,6 +53,7 @@ function secretsFromEnv(env: NodeJS.ProcessEnv): Secret[] {
     },
     { name: 'secret-key', values: keep([env.SECRET_KEY]) },
     { name: 'reddit-secret', values: keep([env.REDDIT_CLIENT_SECRET]) },
+    { name: 'push-signing-key', values: keep([env.PUSH_VAPID_PRIVATE_KEY]) },
   ];
 }
 

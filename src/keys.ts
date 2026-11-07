@@ -1,12 +1,14 @@
 // `keys`: generates this stack's local keys once (priitkustala/ai-news#40, plan step 4):
 // the database passwords, the JWT secret shared by Supabase Auth and PostgREST, the anon
 // and service_role tokens signed with it, and the opaque publishable and secret keys the
-// gateway translates into those tokens. Every value is random and local; none is ever the
+// gateway translates into those tokens, and the local push signing pair with its subject
+// (priitkustala/ai-news#50). Every value is random and local; none is ever the
 // hosted project's. The files go into the memory folder AI_NEWS_SECRETS_DIR, never on a disk
 // (priitkustala/ai-news#92), and are never overwritten; a stop empties the folder.
 import { createHmac, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import webpush from 'web-push';
 import { repositoryRoot } from './env.js';
 
 export const SUPABASE_URL = 'http://ai-news-api:8000';
@@ -49,6 +51,7 @@ export function generateKeys(): { written: string[]; kept: string[] } {
   const serviceJwt = signJwt({ role: 'service_role', iss: 'supabase', iat: issuedAt, exp: expiresAt }, jwtSecret);
   const publishableKey = `sb_publishable_${token(24)}`;
   const secretKey = `sb_secret_${token(24)}`;
+  const vapid = webpush.generateVAPIDKeys();
 
   const files: Record<string, string> = {
     [path.join(dir, 'local.env')]: envFile('ai-news-backend command and scenario runs', {
@@ -63,8 +66,11 @@ export function generateKeys(): { written: string[]; kept: string[] } {
       E2E_DATA_URL: `${SUPABASE_URL}/rest/v1`,
       E2E_PUBLISHABLE_KEY: publishableKey,
       E2E_FIXTURE_FEED_URL: `${FIXTURE_FEED_BASE_URL}/feeds/techcrunch-ai.xml`,
-      E2E_OD08: 'undecided',
+      E2E_OD08: 'push',
       E2E_RUN_TIME_ZONE: 'UTC',
+      PUSH_VAPID_PUBLIC_KEY: vapid.publicKey,
+      PUSH_VAPID_PRIVATE_KEY: vapid.privateKey,
+      PUSH_VAPID_SUBJECT: 'https://ai-news.invalid',
     }),
     [path.join(dir, 'stack-db.env')]: envFile('ai-news-db', {
       POSTGRES_PASSWORD: postgresPassword,

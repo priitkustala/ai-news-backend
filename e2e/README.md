@@ -39,7 +39,7 @@ A story's own instance). `<icompose>` stands for, from `<folder>` on the host,
 | `E2E_PUBLISHABLE_KEY` | the local publishable key: the value `node dist/cli.js keys` wrote into `local.env` (never the hosted project's, never committed) |
 | `E2E_BACKEND_COMMAND` | `node /workspaces/ai-news-backend/dist/cli.js` (built by `npm run build`; in an instance `node /workspaces/<folder>/dist/cli.js`, as `keys` writes it there) |
 | `E2E_FIXTURE_FEED_URL` | `http://ai-news-feeds:8081/feeds/techcrunch-ai.xml` (the fixture feed server) |
-| `E2E_OD08` | `undecided` (OD-08 is open) |
+| `E2E_OD08` | `push` (OD-08 decided: push) |
 | `E2E_RUN_TIME_ZONE` | `UTC` (a test variable; OD-09 stays open) |
 
 ## Run
@@ -77,4 +77,5 @@ npx playwright test                           # full suite
 | filter-category | `@journey-filter-category` | The owner reads the category list with counts and narrows the feed to one category. Rows here: AC-06. |
 | ingest | `@journey-ingest` | A daily ingestion run collects, processes, stores and retains items through the job command. Rows here: AC-01a, AC-01b, AC-01c, AC-02a, AC-02b, AC-03c, AC-03d, AC-03e, AC-04, AC-05, AC-07a, AC-07b, AC-22a, AC-22b, AC-22c, AC-26c, AC-27a, AC-27c, AC-28c, AC-28d. |
 | measure | `@journey-measure` | The feed-quality measurement script runs on the frozen validation sample and reports each metric. Rows here: AC-25. |
+| push | `@journey-push` | One push notification per run date reaches the owner's subscription, and a rerun sends none. Rows here: B-14. |
 | read-feed | `@journey-read-feed` | The owner opens and reads the headline feed and its states (last-updated, Stale, Error). Rows here: AC-08, AC-21a. |
