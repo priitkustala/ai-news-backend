@@ -110,9 +110,9 @@ the project folder, next to `ai-news-team-context/`.
    shared context: from the project folder run `python scripts/session-context.py --text`
    (handoff, operating contract, notes).
 3. Inside the dev container only this repository is mounted writable. The team
-   context is mounted read-only at `/workspaces/ai-news-team-context` and the
-   testing skill at `/workspaces/.skills/outside-in-e2e-testing`; read the front
-   door and `rules/regression-contract.md` from there.
+   context is mounted read-only at `/workspaces/ai-news-team-context`, with the
+   testing skill at `/workspaces/ai-news-team-context/.agents/skills/outside-in-e2e-testing`;
+   read the front door and `rules/regression-contract.md` from there.
    The `github-flow` skill is read inside the box at
    `/workspaces/ai-news-team-context/.agents/skills/github-flow/SKILL.md`.
 4. If the team context cannot be read at all (a clone on its own), stop and say
