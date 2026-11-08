@@ -12,7 +12,8 @@
 // labels_from_fixed_lists: the record's labels and the pipeline's decisions are values of the
 // fixed lists: the five categories, the importance values, the relevance methods and the
 // category methods. importance (the owner's must-read or skip, priitkustala/ai-news#75) is
-// optional: absent is valid, any other value is the error labels.importance.
+// optional: absent is valid; any other value, an explicit null included, that is not must-read
+// or skip is the error labels.importance.
 import { createHash } from 'node:crypto';
 import type { FeedEntry } from '../collect/parse.js';
 import { SUMMARY_MAX_CHARS, type ItemToStore } from '../ingest/process.js';
@@ -91,7 +92,7 @@ export function labelErrors(record: RawRecord, item: ItemToStore | null): string
     if (!inList(CATEGORIES, labels.category)) errors.push('labels.category');
     const group = labels.duplicate_group;
     if (group !== undefined && group !== null && !nonEmpty(group)) errors.push('labels.duplicate_group');
-    if (labels.importance !== undefined && labels.importance !== null && !inList(IMPORTANCE, labels.importance)) errors.push('labels.importance');
+    if (labels.importance !== undefined && !inList(IMPORTANCE, labels.importance)) errors.push('labels.importance');
     for (const key of Object.keys(labels)) if (!(LABEL_FIELDS as readonly string[]).includes(key)) errors.push(`labels.${key} (not a label field)`);
   }
   if (item) {
