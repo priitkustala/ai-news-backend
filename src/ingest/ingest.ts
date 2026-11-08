@@ -24,8 +24,13 @@
 // exits 3 (report incomplete). An item rejected while it was collected (over the per-item
 // limit, S-11) is counted in `fetched`, not in `processed`, never fails its source, and is
 // recorded as counts.rejected (source_id and reason) and reported as `rejected` by every
-// start, the dry run included. The run report
-// is the last line of standard output; the log names counts and ids only (Locked R-21).
+// start, the dry run included. Reddit sources (S-07, priitkustala/ai-news#44,
+// src/collect/reddit.ts) are collected with the run's Reddit credentials or skipped without
+// them; an admitted post is stored with its Reddit fields, and is not stored when its
+// canonical address is already that of a stored item of a feed source or of a feed entry of
+// the same run (OD-41, the owner's answer "drop"; the feed source's item stays as it is). The run report
+// is the last line of standard output; the log names counts and ids only, and a Reddit
+// source's id is written as `reddit` in every report entry and log line (Locked R-21).
 import { UsageError } from '../env.js';
 import { inTransaction, withClient, type Client } from '../db.js';
 import { collect, type CollectSource } from '../collect/collect.js';
@@ -34,6 +39,7 @@ import { storeOtherShare } from './other-share.js';
 import { representativeOrder } from '../process/dedupe.js';
 import { applyProcessing, type ProcessingCounts } from '../process/apply.js';
 import { retain, type RetentionCounts } from '../retain/retain.js';
+import { RedditSession, redditCredentials, redditItems, reportedSourceId, type RedditFields } from '../collect/reddit.js';
 
 export type RunReport = {
   run_id: string | null;
@@ -64,6 +70,8 @@ const sqlState = (error: unknown) => {
 };
 
 type Source = CollectSource & { display_policy: string; default_categories: string[] | null; source_weight: number };
+// An item of this run; `reddit` is present on an item of a Reddit source.
+type RunItem = ItemToStore & { reddit?: RedditFields };
 type RunCounts = { fetched?: number; processed?: number; rejected?: RunReport['rejected'] } & Record<string, unknown>;
 type RunRow = { id: string; status: string; counts: RunCounts; source_errors: RunReport['source_errors'] };
 
@@ -103,48 +111,81 @@ async function runOf(client: Client, runDate: string): Promise<RunRow | undefine
   return (await client.query<RunRow>('select id, status, counts, source_errors from public.ingestion_runs where run_date = $1', [runDate])).rows[0];
 }
 
-// Collects and processes every enabled source; writes nothing.
-async function collectAndProcess(sources: Source[], log: (line: string) => void) {
-  const collected = await collect(sources);
-  const items: ItemToStore[] = [];
+// Collects and processes every enabled source; writes nothing (it reads the stored items'
+// addresses for OD-41).
+async function collectAndProcess(client: Client, sources: Source[], reddit: RedditSession | null, log: (line: string) => void) {
+  const collected = await collect(sources, reddit);
+  let items: RunItem[] = [];
+  // The post ids of each Reddit listing read in this run, by source id (the removal pass).
+  const listed = new Map<string, Set<string>>();
   const sourceErrors: RunReport['source_errors'] = [];
   const rejected: RunReport['rejected'] = [];
   let fetched = 0;
   let dropped = 0;
   let notRelevant = 0;
   for (const result of collected.results) {
+    const source = sources.find((s) => s.id === result.source_id) as Source;
+    const reported = reportedSourceId(source);
     if (!result.ok) {
-      sourceErrors.push({ source_id: result.source_id, error: result.error });
-      log(`ingest: source ${result.source_id} failed (${errorKind(result.error)})`);
+      sourceErrors.push({ source_id: reported, error: result.error });
+      log(`ingest: source ${reported} failed (${errorKind(result.error)})`);
+      continue;
+    }
+    if (result.reddit) {
+      fetched += result.reddit.posts.length;
+      listed.set(source.id, new Set(result.reddit.posts.map((post) => post.id)));
+      const admitted = redditItems(source, result.reddit.posts);
+      items.push(...admitted.items);
+      dropped += admitted.dropped;
+      notRelevant += admitted.notRelevant;
       continue;
     }
     fetched += result.entries.length + result.rejected.length;
     if (result.rejected.length) {
-      rejected.push(...result.rejected.map((reason) => ({ source_id: result.source_id, reason })));
-      log(`ingest: source ${result.source_id}: ${result.rejected.length} item(s) rejected (${[...new Set(result.rejected.map(errorKind))].join(', ')})`);
+      rejected.push(...result.rejected.map((reason) => ({ source_id: reported, reason })));
+      log(`ingest: source ${reported}: ${result.rejected.length} item(s) rejected (${[...new Set(result.rejected.map(errorKind))].join(', ')})`);
     }
-    const source = sources.find((s) => s.id === result.source_id) as Source;
     const processed = processEntries(source, result.entries);
     items.push(...processed.items);
     dropped += processed.dropped;
     notRelevant += processed.notRelevant;
   }
+  // OD-41: a Reddit post whose canonical address is a feed entry's of this run, or a stored
+  // item's of a feed source, is dropped.
+  const posts = items.filter((item) => item.reddit);
+  if (posts.length > 0) {
+    const feedUrls = new Set(items.filter((item) => !item.reddit).map((item) => item.canonical_url));
+    const stored = (await client.query<{ canonical_url: string }>(
+      `select i.canonical_url from public.items i left join app_private.sources s on s.id = i.source_id
+        where i.canonical_url = any($1::text[]) and s.source_type is distinct from 'reddit'`,
+      [posts.map((item) => item.canonical_url)],
+    )).rows;
+    for (const row of stored) feedUrls.add(row.canonical_url);
+    const kept = items.filter((item) => !item.reddit || !feedUrls.has(item.canonical_url));
+    dropped += items.length - kept.length;
+    if (items.length > kept.length) log(`ingest: ${items.length - kept.length} Reddit post(s) dropped as copies of feed items (OD-41)`);
+    items = kept;
+  }
   // The items are stored in the representative order of B-07 (the highest source weight, then
   // the earliest), so of two copies of one canonical address in this run the first is the winner
   // and the later one changes nothing (see the insert below).
   const weightOf = new Map(sources.map((s) => [s.id, Number(s.source_weight)]));
-  const candidate = (item: ItemToStore) => ({
+  const candidate = (item: RunItem) => ({
     ...item, source_weight: weightOf.get(item.source_id) ?? 0, time: item.published_at ? Date.parse(item.published_at) : Date.now(),
   });
   items.sort((a, b) => representativeOrder(candidate(a), candidate(b)));
-  for (const skip of collected.skipped) log(`ingest: source ${skip.source_id} skipped (not a feed source)`);
+  for (const skip of collected.skipped) log(`ingest: source ${skip.source_id} skipped (${skip.reason})`);
   const feeds = collected.results.length;
   const status = feeds > 0 && sourceErrors.length === feeds ? 'failed' : sourceErrors.length > 0 ? 'partial' : 'completed';
-  return { status, items, weightOf, sourceErrors, rejected, requests: collected.requests, fetched, dropped, notRelevant, feeds, skipped: collected.skipped.length };
+  return {
+    status, items, weightOf, sourceErrors, rejected, requests: collected.requests, fetched, dropped, notRelevant, feeds,
+    skipped: collected.skipped.length, listed,
+  };
 }
 
 function countsOf(
   work: Awaited<ReturnType<typeof collectAndProcess>>, added: number, processing?: ProcessingCounts, replaced?: number, retention?: RetentionCounts,
+  redditRemoved?: number,
 ) {
   return {
     sources: work.feeds, sources_failed: work.sourceErrors.length, sources_skipped: work.skipped,
@@ -153,6 +194,7 @@ function countsOf(
     ...(replaced === undefined ? {} : { replaced }),
     ...(processing ? { clusters: processing.clusters, duplicates_not_shown: processing.hidden, arxiv_capped: processing.arxiv_capped } : {}),
     ...(retention ? { deleted_removed_source: retention.deleted_removed_source, deleted_old: retention.deleted_old } : {}),
+    ...(redditRemoved === undefined ? {} : { deleted_reddit_removed: redditRemoved }),
   };
 }
 
@@ -162,10 +204,12 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
       'select id, feed_url, source_type, display_policy, default_categories, source_weight::float8 as source_weight from app_private.sources where enabled order by id',
     )).rows;
     log(`ingest: run date ${runDate}, ${sources.length} enabled sources${dryRun ? ', dry run' : ''}`);
+    const credentials = sources.some((s) => s.source_type === 'reddit') ? await redditCredentials(client) : null;
+    const reddit = credentials ? new RedditSession(credentials) : null;
 
     if (dryRun) {
       const existing = await runOf(client, runDate);
-      const work = await collectAndProcess(sources, log);
+      const work = await collectAndProcess(client, sources, reddit, log);
       const known = (await client.query<{ canonical_url: string }>(
         'select canonical_url from public.items where canonical_url = any($1::text[])', [work.items.map((i) => i.canonical_url)],
       )).rows.length;
@@ -221,7 +265,7 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
       let added: number;
       let retention: RetentionCounts | undefined;
       try {
-        work = await collectAndProcess(sources, log);
+        work = await collectAndProcess(client, sources, reddit, log);
         const done = work;
         ({ added, retention } = await inTransaction(client, async () => {
           let inserted = 0;
@@ -233,24 +277,28 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
             // earlier publication or else fetch time; an equal copy changes nothing); a losing
             // copy updates no row. Relevance and the category are decided on the copy's source and
             // title (B-04, B-05), so a winning copy brings its own. Cluster, score and cap marks
-            // follow in applyProcessing.
+            // follow in applyProcessing. The Reddit fields (S-07) are source-bound too: a feed
+            // copy that wins clears them.
             const result = await client.query<{ inserted: boolean }>(
               `insert into public.items as i (id, canonical_url, source_id, title, published_at, summary, summary_method,
-                                              ai_relevant, relevance_method, category, category_method, status, processing_version)
-               values ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, 'processed', $11)
+                                              ai_relevant, relevance_method, category, category_method, status, processing_version,
+                                              raw, post_url, external_url, author_handle)
+               values ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, 'processed', $11, $13, $14, $15, $16)
                on conflict (canonical_url) do update
                   set source_id = excluded.source_id, title = excluded.title, published_at = excluded.published_at,
                       fetched_at = excluded.fetched_at, image_url = excluded.image_url, summary = excluded.summary,
                       summary_method = excluded.summary_method, relevance_method = excluded.relevance_method,
                       category = excluded.category, category_method = excluded.category_method,
-                      processing_version = excluded.processing_version
+                      processing_version = excluded.processing_version, raw = excluded.raw, post_url = excluded.post_url,
+                      external_url = excluded.external_url, author_handle = excluded.author_handle
                 where $12::float8 > coalesce((select s.source_weight::float8 from app_private.sources s where s.id = i.source_id), 0)
                    or ($12::float8 = coalesce((select s.source_weight::float8 from app_private.sources s where s.id = i.source_id), 0)
                        and coalesce(excluded.published_at, excluded.fetched_at) < coalesce(i.published_at, i.fetched_at))
                returning (xmax = 0) as inserted`,
               [item.id, item.canonical_url, item.source_id, item.title, item.published_at, item.summary,
                 item.summary === null ? null : 'feed', item.relevance_method, item.category, item.category_method, PROCESSING_VERSION,
-                done.weightOf.get(item.source_id) ?? 0],
+                done.weightOf.get(item.source_id) ?? 0, item.reddit ? JSON.stringify(item.reddit.raw) : null,
+                item.reddit?.post_url ?? null, item.reddit?.external_url ?? null, item.reddit?.author_handle ?? null],
             );
             for (const row of result.rows) {
               if (row.inserted) inserted += 1;

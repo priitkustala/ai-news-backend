@@ -5,8 +5,9 @@
 // (covering the headers and the whole body) and a size bound; a transient failure (network,
 // timeout, HTTP 429 or 5xx), whether it happens before the headers or while the body is read,
 // is retried with backoff, any other failure (size, redirect, other HTTP status) is final at
-// once. A paced source (arXiv) waits for its turn before every attempt. Node 22's built-in
-// fetch, no dependency.
+// once. A paced source (arXiv) waits for its turn before every attempt. A caller may set the
+// method, request headers and a body (the Reddit Data API's token and bearer requests, S-07,
+// priitkustala/ai-news#44); the limits are the same. Node 22's built-in fetch, no dependency.
 
 export const FETCH_ATTEMPTS = 3;
 export const FETCH_BACKOFF_MS = [250, 750];
@@ -68,13 +69,20 @@ function classify(error: unknown, stage: string): SourceFailure {
   return new SourceFailure('network', `the connection failed ${stage}${cause ? ` (${cause})` : ''}`, true);
 }
 
-async function attempt(url: string, answered?: () => void): Promise<string> {
+export type FetchOptions = { paced?: boolean; method?: string; headers?: Record<string, string>; body?: string };
+
+async function attempt(url: string, options: FetchOptions, answered?: () => void): Promise<string> {
   let response: Response;
   try {
     response = await fetch(url, {
+      method: options.method ?? 'GET',
       redirect: 'manual',
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      headers: { accept: 'application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9', 'user-agent': 'ai-news-backend ingest' },
+      headers: {
+        accept: 'application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9', 'user-agent': 'ai-news-backend ingest',
+        ...options.headers,
+      },
+      ...(options.body === undefined ? {} : { body: options.body }),
     });
   } catch (error) {
     throw classify(error, 'before the headers');
@@ -100,11 +108,11 @@ async function attempt(url: string, answered?: () => void): Promise<string> {
 
 // The body of the feed at `url`, or a SourceFailure after at most FETCH_ATTEMPTS attempts;
 // with `paced`, each attempt waits for its turn at the arXiv gate.
-export async function fetchFeed(url: string, options: { paced?: boolean } = {}): Promise<{ body: string; attempts: number }> {
+export async function fetchFeed(url: string, options: FetchOptions = {}): Promise<{ body: string; attempts: number }> {
   for (let n = 1; ; n += 1) {
     const answered = options.paced ? await arxivTurn() : undefined;
     try {
-      return { body: await attempt(url, answered), attempts: n };
+      return { body: await attempt(url, options, answered), attempts: n };
     } catch (error) {
       const failure = classify(error, 'during the request');
       if (!failure.transient || n >= FETCH_ATTEMPTS) {
