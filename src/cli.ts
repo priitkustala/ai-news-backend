@@ -11,7 +11,8 @@ import { ingest, parseRunDate } from './ingest/ingest.js';
 import { scanSecrets } from './scan/scan.js';
 import { notify } from './notify/notify.js';
 import { measure } from './measure/measure.js';
-import { MeasureError } from './measure/sample.js';
+import { drawSample } from './measure/draw.js';
+import { MeasureError, sampleFolder } from './measure/sample.js';
 
 const USAGE = `Usage: node dist/cli.js <command> [arguments]
 
@@ -22,8 +23,13 @@ Commands of the job and the local test environment:
   sign-in <persona>                 development sign-in of a seeded persona (${PERSONAS.join(', ')}); prints its access token
   scan-secrets <path>...            scan a repository, a folder or a file for this stack's seeded secrets
                                     (counts and pattern names only) and the key kinds a built client carries
-  measure                           run the pipeline on the frozen validation sample (fixtures/validation-sample/) and print
-                                    the measurement report: values only, no verdict (OD-26)
+  measure [--sample-dir <folder>]   run the pipeline on the frozen validation sample (fixtures/validation-sample/, or the
+                                    sample.json and labels.json of a folder git does not track) and print the measurement
+                                    report: values only, no verdict (OD-26)
+  draw-sample --sources <file> --out <folder>
+                                    fetch each source of the file once and write a frozen 7-day sample (at most 20 items per
+                                    source) with unlabelled labels.json and labelling-table.md into a new folder git does not
+                                    track; prints source ids, counts, bytes and hashes only
 
 Set-up of the local test environment:
   keys                              generate this stack's local keys into the git-ignored .env files (once)
@@ -31,7 +37,8 @@ Set-up of the local test environment:
   check-migration <sql-file>        apply a migration-shaped file as migrate would, report the owner-only check's
                                     verdict and findings, and roll everything back (scenarios of the guard)
 
-Exit status: 0 done; 1 failed (for ingest: the run could not finish its writes; for measure: the sample cannot be measured); 2 usage;
+Exit status: 0 done; 1 failed (for ingest: the run could not finish its writes; for measure: the sample cannot be measured;
+for draw-sample: no source has an item inside the window); 2 usage;
 3 ingest: the run is persisted as reported, but a read for the report failed after the commit.
 scan-secrets exits 1 when it finds a seeded secret (the report is printed first).
 notify exits 1 when subscriptions existed and none went through (the report is printed first).
@@ -85,8 +92,19 @@ async function main(argv: string[]): Promise<void> {
       return;
     }
     case 'measure': {
-      if (args.length !== 0) throw new UsageError('measure takes no arguments.');
-      print(measure(log));
+      if (args.length === 0) {
+        print(measure(log));
+        return;
+      }
+      if (args.length !== 2 || args[0] !== '--sample-dir') throw new UsageError('measure takes no argument or exactly --sample-dir <folder>.');
+      print(measure(log, sampleFolder(args[1])));
+      return;
+    }
+    case 'draw-sample': {
+      const sources = args.length === 4 && args[0] === '--sources' ? args[1] : args.length === 4 && args[2] === '--sources' ? args[3] : undefined;
+      const out = args.length === 4 && args[0] === '--out' ? args[1] : args.length === 4 && args[2] === '--out' ? args[3] : undefined;
+      if (sources === undefined || out === undefined) throw new UsageError('draw-sample takes exactly --sources <file> --out <folder>.');
+      print(await drawSample(sources, out, log));
       return;
     }
     case 'keys': {

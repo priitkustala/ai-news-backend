@@ -1,5 +1,6 @@
 // The measure command (priitkustala/ai-news-backend#4, S-06; Locked AC-25, B-25, W4 section 8):
-// runs the deterministic pipeline of main on the frozen validation sample and prints each
+// runs the deterministic pipeline of main on the frozen validation sample (the committed one,
+// or with --sample-dir the folder of a drawn sample, priitkustala/ai-news#75) and prints each
 // metric as a value. The saved feed of each sample source is parsed by the collect module's
 // parser (the sample is saved feeds, so nothing is fetched), its entries are processed by the
 // process modules as a run processes them (src/ingest/process.ts: canonical address,
@@ -34,12 +35,17 @@ export type Fixture = {
   cluster_id: string | null;
 };
 
-export type Labelled = { ai_relevant: boolean; category: Category; duplicate_group: string | null };
+export type Labelled = { ai_relevant: boolean; category: Category; duplicate_group: string | null; importance: 'must-read' | 'skip' | null };
 
 // The labels of a record that passed labelErrors (src/measure/schema.ts).
 const labelsOf = (record: RawRecord): Labelled => {
   const labels = record.labels as Record<string, unknown>;
-  return { ai_relevant: labels.ai_relevant as boolean, category: labels.category as Category, duplicate_group: (labels.duplicate_group as string | undefined) ?? null };
+  return {
+    ai_relevant: labels.ai_relevant as boolean,
+    category: labels.category as Category,
+    duplicate_group: (labels.duplicate_group as string | undefined) ?? null,
+    importance: (labels.importance as Labelled['importance'] | undefined) ?? null,
+  };
 };
 
 // The schema validation of one fixture record and the record it yields (src/measure/schema.ts).
@@ -117,9 +123,10 @@ function checkSample(sample: Sample, processed: Processed[], labels: RawRecord[]
 
 export type MeasureReport = Record<string, unknown>;
 
-export function measure(log: (line: string) => void): MeasureReport {
-  const sample = readSample();
-  const labels = readLabels();
+// files: the sample and labels files of a --sample-dir folder (sampleFolder); the committed ones by default.
+export function measure(log: (line: string) => void, files: { sample?: string; labels?: string } = {}): MeasureReport {
+  const sample = readSample(files.sample);
+  const labels = readLabels(files.labels);
   const hostile = readHostile();
 
   // collect (parse the saved feeds) and process, source by source
@@ -198,8 +205,11 @@ export function measure(log: (line: string) => void): MeasureReport {
     + `${kept.length} kept, ${representatives.length} clusters; ${hostileFixtures.length} hostile fixtures; label origin ${labels.label_origin}; ${invalid} fixture records fail validation`);
   if (labels.label_origin !== 'owner') log('measure: the labels are not the owner\'s labels: the values do not claim feed quality');
 
-  const TOP_N = 'the sample carries no must-read or skip label (B-25: the owner labels importance; the fixture labels carry relevance, '
-    + 'category and duplicates only), and N and the ranking weights are not set (OD-26 open)';
+  // With the owner's importance on every scored item only N and the weights are missing (#75).
+  const TOP_N = scored.length > 0 && scored.every((f) => f.labels.importance !== null)
+    ? 'N and the ranking weights are not set (OD-26 open)'
+    : 'the sample carries no must-read or skip label (B-25: the owner labels importance; the fixture labels carry relevance, '
+      + 'category and duplicates only), and N and the ranking weights are not set (OD-26 open)';
   return {
     sample_id: sample.sample_id,
     label_origin: labels.label_origin,

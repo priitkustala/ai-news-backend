@@ -3,13 +3,17 @@
 // the per-source cap, each source's configuration and its saved feed body), `labels.json`
 // beside it one label record per sample item, and `fixtures/validation/hostile.json` the
 // seeded injection and malformed fixtures. The sample and the labels are two files so that the
-// labels can be replaced (the owner's labels) without changing the sample. The fixture records
+// labels can be replaced (the owner's labels) without changing the sample. `measure
+// --sample-dir <folder>` (priitkustala/ai-news#75) reads the two files from a folder that no
+// repository tracks instead, a real sample drawn by `draw-sample` (src/measure/draw.ts); the
+// hostile fixtures stay the committed ones. The fixture records
 // are read as they are and validated per record (src/measure/schema.ts); only a sample that
 // cannot be measured at all (a file missing or not JSON, a source without a feed, an item
 // outside the window or over the cap, an item without a label) stops the command.
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { repositoryRoot } from '../env.js';
+import { repositoryRoot, UsageError } from '../env.js';
 
 export const SAMPLE_FILE = path.join(repositoryRoot, 'fixtures', 'validation-sample', 'sample.json');
 export const LABELS_FILE = path.join(repositoryRoot, 'fixtures', 'validation-sample', 'labels.json');
@@ -39,7 +43,28 @@ export type RawRecord = Record<string, unknown>;
 
 export type Labels = { label_origin: string; records: RawRecord[] };
 
-const relative = (file: string) => path.relative(repositoryRoot, file);
+// A file of the repository by its repository path, a file elsewhere (a --sample-dir folder) by its own.
+const relative = (file: string) => {
+  const inside = path.relative(repositoryRoot, file);
+  return inside.startsWith('..') || path.isAbsolute(inside) ? file : inside;
+};
+
+// Whether git tracks a file in `folder` (git -C <folder> ls-files prints a path). A folder in
+// no repository (git exits non-zero) and an ignored folder in one print nothing: not tracked.
+export function trackedByGit(folder: string): boolean {
+  const result = spawnSync('git', ['-C', folder, 'ls-files'], { encoding: 'utf8' });
+  return result.status === 0 && result.stdout.trim() !== '';
+}
+
+// The two files of a --sample-dir folder (#75), after the refusal of a folder git tracks: a
+// sample of real items never lives in a repository (Locked OD-23, R-21).
+export function sampleFolder(folder: string): { sample: string; labels: string } {
+  const dir = path.resolve(folder);
+  if (trackedByGit(dir)) {
+    throw new UsageError('--sample-dir <folder> holds files tracked by git; a sample of real items never lives in a repository');
+  }
+  return { sample: path.join(dir, 'sample.json'), labels: path.join(dir, 'labels.json') };
+}
 
 function readJson(file: string): Record<string, unknown> {
   let text: string;
@@ -62,8 +87,8 @@ const records = (value: unknown): RawRecord[] =>
 
 const time = (value: unknown): number => (typeof value === 'string' ? Date.parse(value) : Number.NaN);
 
-export function readSample(): Sample {
-  const raw = readJson(SAMPLE_FILE);
+export function readSample(file: string = SAMPLE_FILE): Sample {
+  const raw = readJson(file);
   const window = (raw.window ?? {}) as Record<string, unknown>;
   const start = time(window.start);
   const end = time(window.end);
@@ -87,8 +112,8 @@ export function readSample(): Sample {
   return { sample_id: String(raw.sample_id ?? ''), window: { start, end }, max_items_per_source: max, sources };
 }
 
-export function readLabels(): Labels {
-  const raw = readJson(LABELS_FILE);
+export function readLabels(file: string = LABELS_FILE): Labels {
+  const raw = readJson(file);
   return { label_origin: typeof raw.label_origin === 'string' ? raw.label_origin : 'unknown', records: records(raw.items) };
 }
 
