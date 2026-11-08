@@ -5,6 +5,8 @@
 // (priitkustala/ai-news#50). Every value is random and local; none is ever the
 // hosted project's. The files go into the memory folder AI_NEWS_SECRETS_DIR, never on a disk
 // (priitkustala/ai-news#92), and are never overwritten; a stop empties the folder.
+// The Reddit client id, secret and token address (priitkustala/ai-news#44) are random local
+// test values pointing at the fixture server, never a real Reddit credential.
 import { createHmac, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -71,6 +73,9 @@ export function generateKeys(): { written: string[]; kept: string[] } {
       PUSH_VAPID_PUBLIC_KEY: vapid.publicKey,
       PUSH_VAPID_PRIVATE_KEY: vapid.privateKey,
       PUSH_VAPID_SUBJECT: 'https://ai-news.invalid',
+      REDDIT_CLIENT_ID: 'ai-news-local-test',
+      REDDIT_CLIENT_SECRET: token(24),
+      REDDIT_TOKEN_URL: `${FIXTURE_FEED_BASE_URL}/reddit/api/v1/access_token`,
     }),
     [path.join(dir, 'stack-db.env')]: envFile('ai-news-db', {
       POSTGRES_PASSWORD: postgresPassword,
