@@ -18,8 +18,6 @@ services:
       # Team context (front door, testing rules, team memory), read-only. Writes to
       # team memory leave the box only as a reviewed pull request.
       - ../../ai-news-team-context:/workspaces/ai-news-team-context:ro
-      # The shared end-to-end testing skill from the host, read-only.
-      - ${USERPROFILE:-${HOME}}/.agents/skills/outside-in-e2e-testing:/workspaces/.skills/outside-in-e2e-testing:ro
       # The box policy (priitkustala/ai-news#69): the project's Claude Code settings,
       # read-only, at the highest precedence (bypassPermissions with the denials kept).
       - ./managed-settings.json:/etc/claude-code/managed-settings.json:ro
