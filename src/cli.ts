@@ -11,7 +11,7 @@ import { ingest, parseRunDate } from './ingest/ingest.js';
 import { scanSecrets } from './scan/scan.js';
 import { notify } from './notify/notify.js';
 import { measure } from './measure/measure.js';
-import { MeasureError } from './measure/sample.js';
+import { MeasureError, sampleFolder } from './measure/sample.js';
 
 const USAGE = `Usage: node dist/cli.js <command> [arguments]
 
@@ -22,8 +22,9 @@ Commands of the job and the local test environment:
   sign-in <persona>                 development sign-in of a seeded persona (${PERSONAS.join(', ')}); prints its access token
   scan-secrets <path>...            scan a repository, a folder or a file for this stack's seeded secrets
                                     (counts and pattern names only) and the key kinds a built client carries
-  measure                           run the pipeline on the frozen validation sample (fixtures/validation-sample/) and print
-                                    the measurement report: values only, no verdict (OD-26)
+  measure [--sample-dir <folder>]   run the pipeline on the frozen validation sample (fixtures/validation-sample/, or the
+                                    sample.json and labels.json of a folder git does not track) and print the measurement
+                                    report: values only, no verdict (OD-26)
 
 Set-up of the local test environment:
   keys                              generate this stack's local keys into the git-ignored .env files (once)
@@ -85,8 +86,12 @@ async function main(argv: string[]): Promise<void> {
       return;
     }
     case 'measure': {
-      if (args.length !== 0) throw new UsageError('measure takes no arguments.');
-      print(measure(log));
+      if (args.length === 0) {
+        print(measure(log));
+        return;
+      }
+      if (args.length !== 2 || args[0] !== '--sample-dir') throw new UsageError('measure takes no argument or exactly --sample-dir <folder>.');
+      print(measure(log, sampleFolder(args[1])));
       return;
     }
     case 'keys': {
