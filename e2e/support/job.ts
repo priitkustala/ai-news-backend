@@ -1,6 +1,7 @@
 // The job's published interface: the `ingest` command with a run date and `--dry-run`
 // (Locked, Architecture), the seed of the local test environment (Locked, Local test
-// environment), the measurement script (AC-25) and the repository scan (AC-20).
+// environment), the measurement script (AC-25; its --sample-dir option and the draw of a
+// sample folder, priitkustala/ai-news#75) and the repository scan (AC-20).
 // Output shapes: tests/README-testids.md, Named commands and outputs.
 import { lastJsonObject, runBackend, type CommandResult } from './backend';
 
@@ -56,8 +57,17 @@ export function seed(fixtureSet: string, run: string): Record<string, unknown> {
 
 export type MeasureResult = CommandResult & { report: Record<string, unknown> | undefined };
 
-export function measure(): MeasureResult {
-  const result = runBackend(['measure']);
+// With no arguments, exactly the measure command of AC-25; #75 passes --sample-dir <folder>.
+export function measure(args: string[] = []): MeasureResult {
+  const result = runBackend(['measure', ...args]);
+  return { ...result, report: lastJsonObject(result.stdout) };
+}
+
+export type DrawResult = CommandResult & { report: Record<string, unknown> | undefined };
+
+// The draw of a sample folder (#75): draw-sample --sources <file> --out <folder>.
+export function drawSample(args: string[]): DrawResult {
+  const result = runBackend(['draw-sample', ...args]);
   return { ...result, report: lastJsonObject(result.stdout) };
 }
 
