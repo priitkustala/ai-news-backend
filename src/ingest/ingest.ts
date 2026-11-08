@@ -28,7 +28,9 @@
 // src/collect/reddit.ts) are collected with the run's Reddit credentials or skipped without
 // them; an admitted post is stored with its Reddit fields, and is not stored when its
 // canonical address is already that of a stored item of a feed source or of a feed entry of
-// the same run (OD-41, the owner's answer "drop"; the feed source's item stays as it is). In
+// the same run (OD-41, the owner's answer "drop"; the feed source's item stays as it is); a
+// feed entry whose canonical address is that of a stored post of a Reddit source takes over
+// that row and clears its Reddit fields, whatever the weights and times. In
 // the run's write transaction of a run that is not failed, the removal pass (removeRedditPosts)
 // deletes the stored posts of each community whose listing was read in this run that the
 // listing no longer carries and that the Data API marks removed or no longer returns; absence
@@ -319,7 +321,9 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
             // copy updates no row. Relevance and the category are decided on the copy's source and
             // title (B-04, B-05), so a winning copy brings its own. Cluster, score and cap marks
             // follow in applyProcessing. The Reddit fields (S-07) are source-bound too: a feed
-            // copy that wins clears them.
+            // copy that wins clears them. A feed copy also takes over a stored row of a Reddit
+            // source whatever the weights and times (OD-41, finding F-S07-1: the Reddit copy stored
+            // first); a Reddit post never takes over a feed source's row (dropped above).
             const result = await client.query<{ inserted: boolean }>(
               `insert into public.items as i (id, canonical_url, source_id, title, published_at, summary, summary_method,
                                               ai_relevant, relevance_method, category, category_method, status, processing_version,
@@ -335,11 +339,12 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
                 where $12::float8 > coalesce((select s.source_weight::float8 from app_private.sources s where s.id = i.source_id), 0)
                    or ($12::float8 = coalesce((select s.source_weight::float8 from app_private.sources s where s.id = i.source_id), 0)
                        and coalesce(excluded.published_at, excluded.fetched_at) < coalesce(i.published_at, i.fetched_at))
+                   or ($17::boolean and exists (select 1 from app_private.sources s where s.id = i.source_id and s.source_type = 'reddit'))
                returning (xmax = 0) as inserted`,
               [item.id, item.canonical_url, item.source_id, item.title, item.published_at, item.summary,
                 item.summary === null ? null : 'feed', item.relevance_method, item.category, item.category_method, PROCESSING_VERSION,
                 done.weightOf.get(item.source_id) ?? 0, item.reddit ? JSON.stringify(item.reddit.raw) : null,
-                item.reddit?.post_url ?? null, item.reddit?.external_url ?? null, item.reddit?.author_handle ?? null],
+                item.reddit?.post_url ?? null, item.reddit?.external_url ?? null, item.reddit?.author_handle ?? null, !item.reddit],
             );
             for (const row of result.rows) {
               if (row.inserted) inserted += 1;
