@@ -1,5 +1,6 @@
-// `seed <fixture-set> <run-marker>`: resets the run records, the source configuration, the
-// stored items, the bookmarks and the push subscriptions to the base seed plus the named
+// `seed <fixture-set> <run-marker>`: resets the run records, the source configuration (with
+// the local test flag of withheld Reddit credentials, S-07), the stored items, the bookmarks
+// and the push subscriptions to the base seed plus the named
 // fixture set, and prints the fixture manifest as the last line (tests/README-testids.md,
 // Isolation). Runs with the migration role: the seed is the local environment's set-up, not
 // the job.
@@ -19,6 +20,8 @@ export async function loadSet(client: Client, set: FixtureSet, windowEnd: Date =
     await client.query('delete from public.ingestion_runs');
     await client.query('delete from public.items');
     await client.query('delete from app_private.sources');
+    await client.query('delete from app_private.reddit_credentials_withheld');
+    if (set.reddit_credentials_withheld) await client.query('insert into app_private.reddit_credentials_withheld default values');
     for (const s of set.sources) {
       await client.query(
         `insert into app_private.sources (id, name, feed_url, source_type, community, default_categories, image_policy, display_policy, source_weight)
@@ -30,9 +33,12 @@ export async function loadSet(client: Client, set: FixtureSet, windowEnd: Date =
     for (const i of set.items) {
       await client.query(
         `insert into public.items (id, canonical_url, source_id, title, published_at, image_url, summary, category, status,
-                                   category_method, relevance_method, ai_relevant, processing_version, fetched_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'seed', 'seed', true, 'seed', coalesce($10::timestamptz, now()))`,
-        [i.id, i.canonical_url, i.source_id, i.title, i.published_at, i.image_url, i.summary, i.category, i.status, i.fetched_at ?? null],
+                                   category_method, relevance_method, ai_relevant, processing_version, fetched_at,
+                                   raw, post_url, external_url, author_handle)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'seed', 'seed', true, 'seed', coalesce($10::timestamptz, now()),
+                 $11, $12, $13, $14)`,
+        [i.id, i.canonical_url, i.source_id, i.title, i.published_at, i.image_url, i.summary, i.category, i.status, i.fetched_at ?? null,
+          i.raw ?? null, i.post_url ?? null, i.external_url ?? null, i.author_handle ?? null],
       );
     }
     for (const r of set.runs) {

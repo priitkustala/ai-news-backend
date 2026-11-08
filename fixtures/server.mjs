@@ -8,8 +8,13 @@
 // as the request reached it. /stall/body and /disconnect/body send their headers and then
 // stall or drop the connection (bounded retry of a body read, S-02 round 2). With
 // FIXTURE_LOG_REQUESTS=1 every request path is logged to standard output; a request for
-// /entities/never-request.dtd is always logged, because no job may ever make it. Node 22's
-// built-in modules only.
+// /entities/never-request.dtd is always logged, because no job may ever make it. The Reddit
+// routes stand in for Reddit's OAuth and Data API (S-07, priitkustala/ai-news#44): POST
+// /reddit/api/v1/access_token answers an application-only token to an HTTP Basic request with
+// grant_type client_credentials (401 otherwise); the listing and /reddit/api/info.json need a
+// bearer authorization (401 without one); info.json answers every t3_ id of its id parameter
+// as a post marked removed (the fixture's "removed on Reddit"). Node 22's built-in modules only.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -72,6 +77,36 @@ function redditListing({ run, at }, community, omit) {
   return JSON.stringify({ kind: 'Listing', data: { after: null, before: null, children } });
 }
 
+function redditRemoved(ids) {
+  const children = ids.filter((id) => /^t3_[A-Za-z0-9_-]{1,80}$/.test(id)).map((name) => ({
+    kind: 't3',
+    data: { id: name.slice(3), name, title: '[removed]', author: '[deleted]', removed_by_category: 'deleted' },
+  }));
+  return JSON.stringify({ kind: 'Listing', data: { after: null, before: null, children } });
+}
+
+function readBody(request, limit = 4096) {
+  return new Promise((resolve) => {
+    let body = '';
+    request.setEncoding('utf8');
+    request.on('data', (chunk) => { body += chunk; if (body.length > limit) request.destroy(); });
+    request.on('end', () => resolve(body));
+    request.on('error', () => resolve(''));
+  });
+}
+
+async function redditToken(request, response) {
+  const basic = /^Basic [A-Za-z0-9+/=]+$/.test(request.headers.authorization ?? '');
+  const form = new URLSearchParams(await readBody(request));
+  if (!basic || form.get('grant_type') !== 'client_credentials') {
+    return send(response, 401, 'application/json', JSON.stringify({ error: 'unauthorized' }));
+  }
+  return send(response, 200, 'application/json',
+    JSON.stringify({ access_token: crypto.randomBytes(18).toString('base64url'), token_type: 'bearer', expires_in: 3600, scope: 'read' }));
+}
+
+const hasBearer = (request) => /^bearer \S+$/i.test(request.headers.authorization ?? '');
+
 function send(response, status, type, body) {
   response.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
   response.end(body);
@@ -96,6 +131,7 @@ const server = http.createServer((request, response) => {
     }
     return;
   }
+  if (url.pathname === '/reddit/api/v1/access_token' && request.method === 'POST') return void redditToken(request, response);
   if (request.method !== 'GET' && request.method !== 'HEAD') return send(response, 405, 'text/plain', 'method not allowed\n');
   if (url.pathname === '/health') return send(response, 200, 'text/plain', 'ok\n');
   if ((match = url.pathname.match(/^\/status\/(\d{3})\/[A-Za-z0-9-]+$/))) {
@@ -112,6 +148,12 @@ const server = http.createServer((request, response) => {
     return send(response, 200, body.includes('<feed') ? 'application/atom+xml; charset=utf-8' : 'application/rss+xml; charset=utf-8', body);
   }
   if (url.pathname === '/entities/xxe.txt') return send(response, 200, 'text/plain', `xxe-${p.run}`);
+  if (url.pathname.startsWith('/reddit/') && !hasBearer(request)) {
+    return send(response, 401, 'application/json', JSON.stringify({ error: 'unauthorized' }));
+  }
+  if (url.pathname === '/reddit/api/info.json') {
+    return send(response, 200, 'application/json', redditRemoved((url.searchParams.get('id') ?? '').split(',').slice(0, 100)));
+  }
   if ((match = url.pathname.match(/^\/reddit\/r\/([A-Za-z0-9_-]+)\/new\.json$/))) {
     return send(response, 200, 'application/json', redditListing(p, match[1], url.searchParams.get('omit')));
   }
