@@ -43,6 +43,11 @@ export type ItemRow = {
   summary: string | null;
   category: Category;
   status: 'collected' | 'processed';
+  // The Reddit fields of an item of a Reddit source (S-07, priitkustala/ai-news#44); null when absent.
+  raw?: Record<string, unknown> | null;
+  post_url?: string | null;
+  external_url?: string | null;
+  author_handle?: string | null;
 };
 
 export type RunRow = { run_date: string; status: string; started_at: string; ended_at: string | null };
@@ -52,6 +57,9 @@ export type FixtureSet = {
   items: ItemRow[];
   runs: RunRow[];
   manifest: Record<string, unknown>;
+  // The Given "no Reddit credentials" (S-07): the seed writes the one row of
+  // app_private.reddit_credentials_withheld, and the job then treats the credentials as unset.
+  reddit_credentials_withheld?: boolean;
 };
 
 export type SeedContext = { run: string; fixtures: string; now: Date };
@@ -77,7 +85,7 @@ function item(
   title: string,
   category: Category,
   publishedAt: string,
-  extra: Partial<Pick<ItemRow, 'image_url' | 'summary' | 'status'>> = {},
+  extra: Partial<Pick<ItemRow, 'image_url' | 'summary' | 'status' | 'raw'>> = {},
 ): ItemRow {
   const host = new URL(source.source_type === 'reddit' ? 'https://www.reddit.com' : HOSTS[source.id] ?? 'https://example.com').origin;
   const canonical = `${host}/ai-news-fixture/${slug}`;
@@ -169,6 +177,7 @@ type Extra = {
   sources?: SourceRow[];
   items?: ItemRow[];
   runs?: RunRow[];
+  reddit_credentials_withheld?: boolean;
   // Changes to the base seed that the row's Given needs (a failing feed, older items).
   adjust?: (set: FixtureSet) => void;
   // Fields the row reads from the manifest, computed from the complete set.
@@ -231,6 +240,7 @@ export function fixtureSet(name: string, ctx: SeedContext): FixtureSet {
   set.sources.push(...(extra.sources ?? []));
   set.items.push(...(extra.items ?? []));
   set.runs.push(...(extra.runs ?? []));
+  if (extra.reddit_credentials_withheld) set.reddit_credentials_withheld = true;
   extra.adjust?.(set);
   const fields = name === '40g' ? set.manifest : {};
   set.manifest = { fixture_set: name, run: ctx.run, ...fields, ...(extra.manifest?.(set) ?? {}) };
@@ -354,11 +364,12 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
     const reddit = redditSource(ctx, 'artificial', { omit: 'admitted' });
     return {
       sources: [reddit],
-      items: [item(reddit, `${ctx.run}-reddit-admitted`, `${ctx.run}-reddit-admitted synthetic post`, 'other', ago(ctx, 2 * HOUR))],
+      items: [item(reddit, `${ctx.run}-reddit-admitted`, `${ctx.run}-reddit-admitted synthetic post`, 'other', ago(ctx, 2 * HOUR),
+        { raw: { reddit_id: `${ctx.run}-admitted` } })],
     };
   },
-  'AC-27a': (ctx) => ({ sources: [redditSource(ctx, 'artificial')] }),
-  'AC-27c': (ctx) => ({ sources: [redditSource(ctx, 'artificial')] }),
+  'AC-27a': (ctx) => ({ sources: [redditSource(ctx, 'artificial')], reddit_credentials_withheld: true }),
+  'AC-27c': (ctx) => ({ sources: [redditSource(ctx, 'artificial')], reddit_credentials_withheld: true }),
   'AC-28c': (ctx) => ({ adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = fixtureFeed(ctx, 'mirror.xml'); } }),
   'AC-28d': (ctx) => ({ adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = failing(ctx, 503, 'anthropic-news-mirror'); } }),
 
@@ -572,7 +583,7 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
     sources: [redditSource(ctx, 'artificial')],
     manifest: () => ({ community: 'r/artificial', author: `fixture-author-${ctx.run}` }),
   }),
-  'AC-27b': (ctx) => ({ sources: [redditSource(ctx, 'artificial')] }),
+  'AC-27b': (ctx) => ({ sources: [redditSource(ctx, 'artificial')], reddit_credentials_withheld: true }),
   'AC-28a': (ctx) => ({
     adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = fixtureFeed(ctx, 'mirror.xml'); },
     manifest: () => ({
