@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed carrying the external page of the fixture Reddit post (fixture)</title>
+    <link>https://external.example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment (S-07, OD-41).</description>
+    <item><title>{{run}}-shared-article synthetic AI model note (feed copy)</title><link>https://external.example.com/ai-news-fixture/{{run}}-reddit-admitted</link><description>The feed copy of the page the fixture Reddit post links to.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://external.example.com/ai-news-fixture/{{run}}-reddit-admitted</guid></item>
+  </channel>
+</rss>
