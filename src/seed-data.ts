@@ -205,6 +205,27 @@ function redditSource(ctx: SeedContext, community: string, listing: Record<strin
     { source_type: 'reddit', community, display_policy: 'title-link' });
 }
 
+function od41(ctx: SeedContext, owner: 'reddit' | 'feed'): Extra {
+  const reddit = redditSource(ctx, 'artificial');
+  const feed = source('fixture-shared-article', 'Fixture shared-article feed', fixtureFeed(ctx, 'reddit-shared.xml'));
+  const url = `https://external.example.com/ai-news-fixture/${ctx.run}-reddit-admitted`;
+  const feedTitle = `${ctx.run}-shared-article synthetic AI model note (feed copy)`;
+  const stored: ItemRow = owner === 'reddit'
+    ? {
+      ...item(reddit, `${ctx.run}-reddit-admitted`, `${ctx.run}-reddit-admitted synthetic post`, 'other', ago(ctx, 2 * HOUR)),
+      raw: { reddit_id: `${ctx.run}-admitted` },
+      post_url: `https://www.reddit.com/r/artificial/comments/${ctx.run}/admitted/`,
+      external_url: url,
+      author_handle: `fixture-author-${ctx.run}`,
+    }
+    : item(feed, `${ctx.run}-reddit-admitted`, feedTitle, 'other', ago(ctx, 2 * HOUR));
+  return {
+    sources: [reddit, feed],
+    items: [{ ...stored, id: itemId(url), canonical_url: url }],
+    manifest: () => ({ shared_url: url, feed_source: feed.name, feed_title: feedTitle }),
+  };
+}
+
 const nameOf = (set: FixtureSet, sourceId: string) => set.sources.find((s) => s.id === sourceId)?.name ?? sourceId;
 
 function shown(set: FixtureSet, row: ItemRow) {
@@ -370,6 +391,13 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   },
   'AC-27a': (ctx) => ({ sources: [redditSource(ctx, 'artificial')], reddit_credentials_withheld: true }),
   'AC-27c': (ctx) => ({ sources: [redditSource(ctx, 'artificial')], reddit_credentials_withheld: true }),
+  // OD-41 in both stored orders (finding F-S07-1 of S-07 round 1): the fixture Reddit post's
+  // external page is stored as if by an earlier run, two hours before this run's copies, owned
+  // by the Reddit source (reddit-first) or by a feed source of the same weight (feed-first);
+  // this run's listing still carries the post and the feed (fixtures/feeds/reddit-shared.xml)
+  // carries the same page at the seed time, later than the stored copy.
+  'OD-41-reddit-first': (ctx) => od41(ctx, 'reddit'),
+  'OD-41-feed-first': (ctx) => od41(ctx, 'feed'),
   'AC-28c': (ctx) => ({ adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = fixtureFeed(ctx, 'mirror.xml'); } }),
   'AC-28d': (ctx) => ({ adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = failing(ctx, 503, 'anthropic-news-mirror'); } }),
 
