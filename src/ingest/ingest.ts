@@ -28,12 +28,18 @@
 // src/collect/reddit.ts) are collected with the run's Reddit credentials or skipped without
 // them; an admitted post is stored with its Reddit fields, and is not stored when its
 // canonical address is already that of a stored item of a feed source or of a feed entry of
-// the same run (OD-41, the owner's answer "drop"; the feed source's item stays as it is). The run report
+// the same run (OD-41, the owner's answer "drop"; the feed source's item stays as it is). In
+// the run's write transaction of a run that is not failed, the removal pass (removeRedditPosts)
+// deletes the stored posts of each community whose listing was read in this run that the
+// listing no longer carries and that the Data API marks removed or no longer returns; absence
+// from a listing alone never deletes. A failed lookup is that source's error and deletes
+// nothing (counts.deleted_reddit_removed, a number). The run report
 // is the last line of standard output; the log names counts and ids only, and a Reddit
 // source's id is written as `reddit` in every report entry and log line (Locked R-21).
 import { UsageError } from '../env.js';
 import { inTransaction, withClient, type Client } from '../db.js';
 import { collect, type CollectSource } from '../collect/collect.js';
+import { SourceFailure } from '../collect/fetch.js';
 import { processEntries, PROCESSING_VERSION, type ItemToStore } from './process.js';
 import { storeOtherShare } from './other-share.js';
 import { representativeOrder } from '../process/dedupe.js';
@@ -183,6 +189,40 @@ async function collectAndProcess(client: Client, sources: Source[], reddit: Redd
   };
 }
 
+// The removal pass (W7 RD-3): for each Reddit source whose listing was read in this run, its
+// stored posts that the listing does not carry are looked up at the info endpoint, and those
+// marked removed or not returned are deleted. A failed lookup becomes that source's error (the
+// run then ends partial) and deletes nothing of that source. Returns the deleted count.
+async function removeRedditPosts(
+  client: Client, sources: Source[], reddit: RedditSession, work: Awaited<ReturnType<typeof collectAndProcess>>, log: (line: string) => void,
+): Promise<number> {
+  let deleted = 0;
+  for (const [sourceId, listed] of work.listed) {
+    const source = sources.find((s) => s.id === sourceId) as Source;
+    const stored = (await client.query<{ reddit_id: string }>(
+      `select raw->>'reddit_id' as reddit_id from public.items where source_id = $1 and raw->>'reddit_id' is not null`, [sourceId],
+    )).rows.map((row) => row.reddit_id).filter((id) => !listed.has(id));
+    if (stored.length === 0) continue;
+    let removed: string[];
+    try {
+      removed = await reddit.removedIds(source, stored);
+    } catch (error) {
+      const message = error instanceof SourceFailure ? error.message : 'unexpected: the removal lookup failed';
+      work.sourceErrors.push({ source_id: reportedSourceId(source), error: message });
+      if (work.status === 'completed') work.status = 'partial';
+      log(`ingest: source ${reportedSourceId(source)}: the removal lookup failed (${errorKind(message)}); nothing deleted`);
+      continue;
+    }
+    if (removed.length === 0) continue;
+    const result = await client.query(
+      `delete from public.items where source_id = $1 and raw->>'reddit_id' = any($2::text[])`, [sourceId, removed],
+    );
+    deleted += result.rowCount ?? 0;
+  }
+  if (deleted) log(`ingest: ${deleted} stored Reddit post(s) removed on Reddit deleted`);
+  return deleted;
+}
+
 function countsOf(
   work: Awaited<ReturnType<typeof collectAndProcess>>, added: number, processing?: ProcessingCounts, replaced?: number, retention?: RetentionCounts,
   redditRemoved?: number,
@@ -264,6 +304,7 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
       let work: Awaited<ReturnType<typeof collectAndProcess>> | undefined;
       let added: number;
       let retention: RetentionCounts | undefined;
+      let redditRemoved: number | undefined;
       try {
         work = await collectAndProcess(client, sources, reddit, log);
         const done = work;
@@ -305,6 +346,9 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
               else replaced += 1;
             }
           }
+          // The removal pass of Reddit posts (S-07), not at a failed run; before retention, so
+          // the counts do not overlap.
+          if (done.status !== 'failed' && reddit) redditRemoved = await removeRedditPosts(client, sources, reddit, done, log);
           // B-22: retention before applyProcessing, so clusters, scores and the Other share are
           // computed on the items that remain; a failed run keeps the stored items (B-02).
           const deleted = done.status === 'failed' ? undefined : await retain(client);
@@ -315,7 +359,7 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
           await storeOtherShare(client, runId, null);
           await client.query(
             'update public.ingestion_runs set status = $2, ended_at = now(), counts = $3, source_errors = $4 where id = $1',
-            [runId, done.status, JSON.stringify(countsOf(done, inserted, processing, replaced, deleted)), JSON.stringify(done.sourceErrors)],
+            [runId, done.status, JSON.stringify(countsOf(done, inserted, processing, replaced, deleted, redditRemoved)), JSON.stringify(done.sourceErrors)],
           );
           return { added: inserted, retention: deleted };
         }));
@@ -354,6 +398,7 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
       log(`ingest: run ${runId} of ${runDate} ended ${work.status}: fetched ${work.fetched}, processed ${work.items.length}, `
         + `not AI-relevant ${work.notRelevant}, added ${added}, `
         + (retention ? `deleted of removed sources ${retention.deleted_removed_source}, deleted past the window ${retention.deleted_old}, ` : '')
+        + (redditRemoved === undefined ? '' : `deleted removed on Reddit ${redditRemoved}, `)
         + `failed sources ${work.sourceErrors.length}, rejected items ${work.rejected.length}, stored items ${itemCount ?? 'unknown'}`);
       return {
         run_id: runId, run_date: runDate, status: work.status, dry_run: false,
