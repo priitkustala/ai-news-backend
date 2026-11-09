@@ -150,7 +150,7 @@ services:
       - ..:/srv/backend:ro
       - stack-secrets:/run/ai-news-secrets
     tmpfs:
-      - /srv/backend/node_modules:uid=1000,gid=1000
+      - /srv/backend/node_modules:exec,uid=1000,gid=1000
       - /srv/backend/dist:uid=1000,gid=1000
     networks:
       - staging
