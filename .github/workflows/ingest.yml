@@ -1,0 +1,50 @@
+# priitkustala/ai-news#62: the ingestion job on GitHub Actions.
+# Manual trigger only; the schedule is added by a later task once the owner decides OD-09 and OD-34.
+# The secret INGEST_DATABASE_URL is set by the owner in the repository settings, never in a file.
+# This item runs the job only as a dry run.
+name: ingest (manual dry run)
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_date:
+        type: string
+        required: false
+        description: the run date YYYY-MM-DD, empty means today in UTC
+      dry_run:
+        type: boolean
+        default: true
+        description: write nothing
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.INGEST_DATABASE_URL }}
+      RUN_DATE: ${{ inputs.run_date }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: connection check (before)
+        run: |
+          node --input-type=module -e "import pg from 'pg'; const client = new pg.Client({ connectionString: process.env.DATABASE_URL }); await client.connect(); const result = await client.query('select current_user as role, (select count(*) from public.ingestion_runs)::integer as ingestion_runs, (select count(*) from public.items)::integer as items'); console.log(JSON.stringify(result.rows[0])); await client.end();"
+      - name: ingest
+        run: |
+          run_date="${RUN_DATE:-$(date -u +%F)}"
+          dry_run_flag=""
+          if [ "$DRY_RUN" = "true" ]; then dry_run_flag="--dry-run"; fi
+          node dist/cli.js ingest "$run_date" $dry_run_flag
+      - name: connection check (after)
+        run: |
+          node --input-type=module -e "import pg from 'pg'; const client = new pg.Client({ connectionString: process.env.DATABASE_URL }); await client.connect(); const result = await client.query('select current_user as role, (select count(*) from public.ingestion_runs)::integer as ingestion_runs, (select count(*) from public.items)::integer as items'); console.log(JSON.stringify(result.rows[0])); await client.end();"
