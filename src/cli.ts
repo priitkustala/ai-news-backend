@@ -6,6 +6,7 @@ import { loadLocalEnv, UsageError } from './env.js';
 import { generateKeys } from './keys.js';
 import { checkMigration, migrate } from './migrate.js';
 import { seed } from './seed.js';
+import { seedSources } from './seed-sources.js';
 import { isPersona, PERSONAS, signIn } from './auth.js';
 import { ingest, parseRunDate } from './ingest/ingest.js';
 import { scanSecrets } from './scan/scan.js';
@@ -34,6 +35,8 @@ Commands of the job and the local test environment:
 Set-up of the local test environment:
   keys                              generate this stack's local keys into the git-ignored .env files (once)
   migrate                           apply the migrations, create the personas and load the base seed (safe to run again)
+  seed-sources <file>               replace the configured sources with the rows of a sources file (the format of
+                                    config/sources.json); loads no item (safe to run again)
   check-migration <sql-file>        apply a migration-shaped file as migrate would, report the owner-only check's
                                     verdict and findings, and roll everything back (scenarios of the guard)
 
@@ -77,6 +80,11 @@ async function main(argv: string[]): Promise<void> {
     case 'seed': {
       if (args.length !== 2) throw new UsageError('seed takes a fixture set and a run marker.');
       print(await seed(args[0], args[1]));
+      return;
+    }
+    case 'seed-sources': {
+      if (args.length !== 1) throw new UsageError('seed-sources takes one sources file.');
+      print(await seedSources(args[0]));
       return;
     }
     case 'sign-in': {
