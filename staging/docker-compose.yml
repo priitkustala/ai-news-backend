@@ -139,7 +139,7 @@ services:
   # folder read-only, with node_modules and dist in its own memory (it installs and builds
   # there); the keys volume writable, since the job writes the keys before the stack's first start.
   staging-job:
-    image: node:22
+    image: node:22@sha256:7702d8aa4d5910871692af4480eb3ba86f23047a6417a44d857d06c95d060d3f
     user: node
     working_dir: /srv/backend
     command: ["sleep", "infinity"]
