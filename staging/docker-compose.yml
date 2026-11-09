@@ -1,0 +1,173 @@
+# The staging project of ai-news-backend (priitkustala/ai-news-backend#36, SI-40): the real
+# ingestion of the committed source list (config/sources.json) into a database of its own.
+#
+# The owner's decision (2026-11-08): the staging environment has a container of its own with open
+# network access, and no agent node ever runs in this project. So only staging-job reaches the
+# internet (the networks staging, internal, and default, compose's own bridge); the stack services
+# are on staging only; the job runs the plain Node 22 image with no agent configuration and no
+# sign-in path; nothing publishes a port. Commands run only by docker compose exec from the host.
+#
+# ai-news-db, ai-news-auth, ai-news-rest and ai-news-api are copied from the local test
+# environment's docker-compose.override.yml (the stack file of the container configuration
+# folder at the repository root), lines 41 to 156 at 2c96f9d, with the same images, digests,
+# entrypoints, commands, environment, health checks and relative paths (this folder sits at the
+# same depth, so ../stack/... is unchanged); only their network is staging. A copy and not
+# extends: extends would bring the gateway's second network, which a merge cannot remove. The
+# service names stay, because the keys name the hosts ai-news-db and ai-news-api.
+#
+# Start order, from the backend folder (staging/README.md): up -d staging-job; in the job
+# npm ci --ignore-scripts, npm run build and node dist/cli.js keys; up -d --wait (the stack's
+# first start on those keys); in the job migrate, seed-sources config/sources.json and ingest.
+# down -v removes the project, its database and its keys.
+name: ai-news-staging
+
+services:
+  ai-news-db:
+    image: supabase/postgres:17.11.0.003@sha256:7374d196da7e301512cc5329e18040e0f7bb856287b323777cdadecccbc6c7e4
+    restart: unless-stopped
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "log_min_messages=fatal"]
+    entrypoint: ["/bin/sh", "/stack/secrets/start-db.sh", "docker-entrypoint.sh"]
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      PGPORT: "5432"
+      POSTGRES_PORT: "5432"
+      PGDATABASE: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - ../stack/db/99-roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
+      - ai-news-db-data:/var/lib/postgresql/data
+      - stack-secrets:/run/ai-news-secrets:ro
+      - ../stack/secrets:/stack/secrets:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - staging
+
+  ai-news-auth:
+    image: supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b
+    restart: unless-stopped
+    depends_on:
+      ai-news-db:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/stack/secrets/start.sh", "stack-auth.env", "auth"]
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: http://ai-news-api:8000
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_SITE_URL: http://localhost:3000
+      GOTRUE_URI_ALLOW_LIST: ""
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_ISSUER: http://ai-news-api:8000/auth/v1
+      # Password sign-in, one account per persona; no self sign-up (the seed creates
+      # the personas through the admin interface); email only.
+      GOTRUE_DISABLE_SIGNUP: "true"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false"
+      GOTRUE_MAILER_AUTOCONFIRM: "false"
+      GOTRUE_SMS_AUTOCONFIRM: "false"
+      GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: "true"
+      GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION: "true"
+      GOTRUE_PASSWORD_MIN_LENGTH: "12"
+      # Local only: the scenario suite signs in about 60 times a run, above the default
+      # token limit (150 per 5 minutes, burst 30); authorisation is unchanged.
+      GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "1800"
+    volumes:
+      - stack-secrets:/run/ai-news-secrets:ro
+      - ../stack/secrets:/stack/secrets:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - staging
+
+  ai-news-rest:
+    image: postgrest/postgrest:v16.4@sha256:d155c6718ed9a9f990d159a2ab7c0a3f16944dbb6d0a0344557421042acfe0df
+    restart: unless-stopped
+    depends_on:
+      ai-news-db:
+        condition: service_healthy
+    command: ["postgrest", "/stack/secrets/postgrest.conf"]
+    environment:
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_EXTRA_SEARCH_PATH: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_DB_MAX_ROWS: "1000"
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_ADMIN_SERVER_PORT: "3001"
+      PGRST_ADMIN_SERVER_HOST: localhost
+    volumes:
+      - stack-secrets:/run/ai-news-secrets:ro
+      - ../stack/secrets:/stack/secrets:ro
+    healthcheck:
+      test: ["CMD", "postgrest", "--ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - staging
+
+  ai-news-api:
+    image: envoyproxy/envoy:v1.39.2@sha256:460f8c329f24b2e1c7c5af64cb314a6f351ad1c262ba77b135ac46b35ebd5f85
+    restart: unless-stopped
+    depends_on:
+      - ai-news-auth
+      - ai-news-rest
+    entrypoint: ["/bin/sh", "/stack/secrets/start.sh", "stack-api.env", "/bin/sh", "/stack/envoy/entrypoint.sh"]
+    volumes:
+      - ../stack/envoy:/stack/envoy:ro
+      - stack-secrets:/run/ai-news-secrets:ro
+      - ../stack/secrets:/stack/secrets:ro
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/127.0.0.1/8000'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - staging
+
+  # The job container: the only one with the internet. The plain Node 22 image; the backend
+  # folder read-only, with node_modules and dist in its own memory (it installs and builds
+  # there); the keys volume writable, since the job writes the keys before the stack's first start.
+  staging-job:
+    image: node:22@sha256:7702d8aa4d5910871692af4480eb3ba86f23047a6417a44d857d06c95d060d3f
+    user: node
+    working_dir: /srv/backend
+    command: ["sleep", "infinity"]
+    restart: unless-stopped
+    environment:
+      AI_NEWS_SECRETS_DIR: /run/ai-news-secrets
+    volumes:
+      - ..:/srv/backend:ro
+      - stack-secrets:/run/ai-news-secrets
+    tmpfs:
+      - /srv/backend/node_modules:uid=1000,gid=1000
+      - /srv/backend/dist:uid=1000,gid=1000
+    networks:
+      - staging
+      - default
+
+networks:
+  # The stack's network: no route out. default is compose's own bridge, not internal, and only
+  # staging-job joins it.
+  staging:
+    internal: true
+
+volumes:
+  ai-news-db-data: {}
+  # The keys, in memory only: emptied when the project's last container stops, written again
+  # by node dist/cli.js keys at every start.
+  stack-secrets:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=1m,uid=1000"

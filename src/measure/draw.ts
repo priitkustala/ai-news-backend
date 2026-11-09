@@ -55,7 +55,7 @@ export type SourceLine = {
 
 type Drawn = { line: SourceLine; kept: FeedEntry[] };
 
-function readSources(file: string): { input: Buffer; sources: DrawSource[] } {
+export function readSources(file: string): { input: Buffer; sources: DrawSource[] } {
   let input: Buffer;
   let raw: unknown;
   try {
