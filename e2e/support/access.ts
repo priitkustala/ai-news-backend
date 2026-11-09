@@ -9,6 +9,7 @@ import { requireEnv } from './env';
 import {
   affectedNoRow,
   bookmarkFor,
+  dataUrl,
   expectRows,
   isAuthorizationRefusal,
   isRefusedOrEmpty,
@@ -186,3 +187,37 @@ export function changeRefused(probe: AccessProbe, result: WriteResult): boolean 
 
 export { isRefusedOrEmpty };
 
+
+// Guest reading (priitkustala/ai-news-backend#47, S-21a): the news relations a visitor without a
+// sign-in reads, and the columns of ingestion_runs the client's last-updated line reads (its read
+// selects run_date,ended_at filtered on status and ordered by ended_at and run_date).
+export const NEWS_RELATIONS = ['feed', 'categories', 'items'];
+export const LAST_UPDATED_SELECT = 'run_date,ended_at';
+
+// A read with a chosen select list, row filter and schema profile (the Accept-Profile header of
+// the Data API), answered in the shape of readRelation: rows only on a 200 with a well-formed list.
+export async function readSelected(
+  request: APIRequestContext,
+  relation: string,
+  options: { select?: string; filter?: string; token?: string; profile?: string } = {},
+): Promise<ReadResult> {
+  const key = requireEnv('E2E_PUBLISHABLE_KEY', 'the local publishable key of the local Supabase interface');
+  const headers: Record<string, string> = options.token ? { apikey: key, Authorization: `Bearer ${options.token}` } : { apikey: key };
+  if (options.profile) headers['Accept-Profile'] = options.profile;
+  const query = `select=${options.select ?? '*'}${options.filter ? `&${options.filter}` : ''}`;
+  const response = await request.get(`${dataUrl()}/${relation}?${query}`, { headers });
+  if (response.status() !== 200) return { status: response.status(), rows: [], malformed: false };
+  let body: unknown;
+  try {
+    body = JSON.parse(await response.text());
+  } catch {
+    body = undefined;
+  }
+  const ok = Array.isArray(body) && body.every((row) => row !== null && typeof row === 'object' && !Array.isArray(row));
+  return { status: 200, rows: ok ? (body as Row[]) : [], malformed: !ok };
+}
+
+// The identifying values of rows, sorted, so two reads of one relation compare as sets.
+export function idsOf(relation: string, rows: Row[]): string[] {
+  return rows.map((row) => String(row[KEY[relation]])).sort();
+}

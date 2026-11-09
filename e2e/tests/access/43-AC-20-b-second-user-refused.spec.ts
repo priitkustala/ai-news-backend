@@ -2,17 +2,21 @@
 // Source: LOCKED specification SHA-256 d32043642ac985b907e6ccb80e8d1fc4868ae3c526c2453ccace6517a3dac890,
 // criterion AC-20; the Given/When/Then is the owning story's row AC-20b. Kind invariant (sprint-02.md
 // section 2.3, amendment 01, AD-01): passes once #40 is built and after every later story.
+// Rewritten by priitkustala/ai-news-backend#47 (S-21a, AC-5; the owner's decision of 2026-11-09, question 1:
+// rewrite it): the read half changes, the write assertions stay as they were.
 // Given a session of a second synthetic user, when any table or view of the exposed schema is read or written
-// with the publishable key, then no item, bookmark or run row is returned and every write is refused.
+// with the publishable key, then feed, categories and items return the same rows a visitor without a sign-in
+// reads, bookmarks, push_subscriptions and ingestion_runs return none, and every write is refused with no
+// owner row changed.
 import { test, expect } from '@playwright/test';
 import { runMarker } from '../../support/env';
 import { seed } from '../../support/job';
-import { describeRead, expectRows, signIn } from '../../support/data';
-import { changeRefused, insertRefused, isRefusedOrEmpty, probeAccess } from '../../support/access';
+import { describeRead, expectRows, readRelation, signIn } from '../../support/data';
+import { NEWS_RELATIONS, changeRefused, idsOf, insertRefused, isRefusedOrEmpty, probeAccess } from '../../support/access';
 
 test(
-  'AC-20b: with a second synthetic user session no row is returned and every write is refused',
-  { tag: ['@journey-access', '@surface-data', '@story-43'] },
+  'AC-20b: with a second synthetic user session the news reads as a guest\'s, no personal or run row is returned and every write is refused',
+  { tag: ['@journey-access', '@surface-data', '@story-43', '@story-47'] },
   async ({ request }) => {
     // Given: a session of the second synthetic user; the owner's session holds a row in every
     // declared relation of the exposed schema (support/access.ts) and observes the effect
@@ -25,14 +29,23 @@ test(
     // unique to this run, with the publishable key and the second user's session
     const probes = await probeAccess(request, owner, SESSION, run);
 
-    // Then: no row is returned and every write is refused: each insert by authorization (401 or
-    // 403, not a malformed-input answer) and leaving no row; no update or delete changes the
-    // owner's target row (row-level security may answer 2xx with no affected row)
+    // Then: feed, categories and items return the news rows with the same ids as a read without
+    // a sign-in of the same relation; bookmarks, push_subscriptions and ingestion_runs return
+    // none; every write is refused: each insert by authorization (401 or 403, not a
+    // malformed-input answer) and leaving no row; no update or delete changes the owner's target
+    // row (row-level security may answer 2xx with no affected row)
     expect(probes.length, 'every declared relation is probed').toBeGreaterThan(0);
     for (const p of probes) {
       expect(p.read.status, `${p.relation} is in the exposed schema`).not.toBe(404);
       expect(p.read.malformed, `${p.relation}: the answer is not a malformed list`).toBe(false);
-      expect(isRefusedOrEmpty(p.read), `${p.relation}: no row is returned (${describeRead(p.read)})`).toBe(true);
+      if (NEWS_RELATIONS.includes(p.relation)) {
+        const rows = expectRows(p.read, `${p.relation}: the news rows the second user reads`);
+        expect(rows.length, `${p.relation}: the news rows the second user reads are more than 0`).toBeGreaterThan(0);
+        const guestRows = expectRows(await readRelation(request, p.relation), `${p.relation}: the read without a sign-in`);
+        expect(idsOf(p.relation, rows), `${p.relation}: the second user reads the ids a guest reads`).toEqual(idsOf(p.relation, guestRows));
+      } else {
+        expect(isRefusedOrEmpty(p.read), `${p.relation}: no row is returned (${describeRead(p.read)})`).toBe(true);
+      }
       expect(insertRefused(p), `${p.relation}: insert refused (${p.insert.status} ${p.insert.body.slice(0, 200)})`).toBe(true);
       expect(expectRows(p.inserted, `${p.relation}: the owner's readback after the insert`), `${p.relation}: the refused insert left no row`).toEqual([]);
       expect(changeRefused(p, p.update), `${p.relation}: update refused (${p.update.status})`).toBe(true);
