@@ -6,7 +6,9 @@
 // dropped; the canonical address is the link without its fragment and without `utm_*`
 // parameters (S-04, src/process/dedupe.ts), and the id is its SHA-256 (as in the seed); of two
 // entries of one feed with the same canonical address the earlier is kept; a source whose
-// display policy is `title-link` keeps no summary. Only AI-relevant entries are kept (B-04,
+// display policy is `title-link` keeps no summary; a summary longer than SUMMARY_MAX_CHARS is
+// cut after its last sentence end within it, or at its last space with an ellipsis (B-09,
+// priitkustala/ai-news#109). Only AI-relevant entries are kept (B-04,
 // src/process/relevance.ts); the others are counted as not relevant. Each kept item gets one
 // of the five categories (B-05, src/process/category.ts). Duplicate clusters and the ranking
 // across sources run over the stored items (src/process/apply.ts).
@@ -38,6 +40,19 @@ function plainText(html: string): string {
   return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// The summary bound: text of at most SUMMARY_MAX_CHARS stays; a longer text is cut after its
+// last full stop, exclamation mark or question mark followed by a space within the bound, else
+// at its last space with one ellipsis, else after SUMMARY_MAX_CHARS - 1 characters with the ellipsis.
+export function cutSummary(text: string): string {
+  if (text.length <= SUMMARY_MAX_CHARS) return text;
+  for (let i = SUMMARY_MAX_CHARS - 1; i >= 0; i -= 1) {
+    if ('.!?'.includes(text[i]) && text[i + 1] === ' ') return text.slice(0, i + 1);
+  }
+  const space = text.slice(0, SUMMARY_MAX_CHARS).lastIndexOf(' ');
+  if (space > 0) return `${text.slice(0, space)}\u2026`;
+  return `${text.slice(0, SUMMARY_MAX_CHARS - 1)}\u2026`;
+}
+
 function timestamp(value: string | null): string | null {
   if (!value) return null;
   const time = Date.parse(value);
@@ -63,7 +78,7 @@ export function processEntries(source: ProcessSource, entries: FeedEntry[]): { i
       const first = kept[earlier].published_at;
       if (published_at === null || (first !== null && first <= published_at)) continue;
     }
-    const summary = source.display_policy === 'title-link' || !entry.summary ? null : plainText(entry.summary).slice(0, SUMMARY_MAX_CHARS) || null;
+    const summary = source.display_policy === 'title-link' || !entry.summary ? null : cutSummary(plainText(entry.summary)) || null;
     const item: Kept = {
       id: createHash('sha256').update(url).digest('hex'),
       canonical_url: url,
