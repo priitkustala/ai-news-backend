@@ -446,6 +446,15 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
     };
   },
 
+  // priitkustala/ai-news#108 rows: a permanent redirect within the configured site (B-03).
+  '108-AC-01a': (ctx) => redirectCase(ctx, 301, 1, 'case-01a-rd'),
+  '108-AC-01b': (ctx) => redirectCase(ctx, 308, 1, 'case-01b-rd'),
+  '108-AC-01c': (ctx) => redirectCase(ctx, 301, 2, 'case-01c-rd'),
+  '108-AC-03a': (ctx) => redirectCase(ctx, 302, 1, 'case-03a-rd'),
+  '108-AC-03b': (ctx) => redirectCase(ctx, 307, 1, 'case-03b-rd'),
+  '108-AC-03c': (ctx) => redirectCase(ctx, 301, 1, 'case-03c-rd', { to: 'other' }),
+  '108-AC-03d': (ctx) => redirectCase(ctx, 301, 3, 'case-03d-rd'),
+
   // ai-news-frontend rows.
   'AC-03a': (ctx) => ({ sources: [source('fixture-hostile-title', 'Fixture feed with a script title', fixtureFeed(ctx, 'hostile-title.xml'))] }),
   'AC-03b': (ctx) => ({
@@ -656,6 +665,21 @@ function threeCategories(ctx: SeedContext, set: FixtureSet): Extra {
     items,
     adjust: (all) => { all.items = all.items.filter((row) => ['releases', 'policy', 'business'].includes(row.category)); },
     manifest: (all) => ({ policy_titles: all.items.filter((row) => row.category === 'policy').map((row) => row.title) }),
+  };
+}
+
+// The sets of priitkustala/ai-news#108 (above): the fixture feed that succeeds and one case source
+// addressed at the fixture server's /redirect route, which answers `status` `hops` times before
+// ok.xml with the run marker followed by `id` (so the case's items differ from the ok source's)
+// and target=`id`. The id has three words, so its items' titles are not near-identical to the
+// ok source's (B-07).
+function redirectCase(ctx: SeedContext, status: number, hops: number, id: string, extra: Record<string, string> = {}): Extra {
+  const query = new URLSearchParams({ run: ctx.run, at: ctx.now.toISOString(), ...extra });
+  const caseSource = source('fixture-redirect', `Fixture feed answering HTTP ${status} ${hops} times`,
+    `${ctx.fixtures}/redirect/${status}/${hops}/${id}?${query}`);
+  return {
+    sources: [source('fixture-ok', 'Fixture feed that succeeds', fixtureFeed(ctx, 'ok.xml')), caseSource],
+    manifest: () => ({ case_source_id: caseSource.id, case_id: id, ok_source_id: 'fixture-ok' }),
   };
 }
 
