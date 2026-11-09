@@ -13,7 +13,12 @@
 // /reddit/api/v1/access_token answers an application-only token to an HTTP Basic request with
 // grant_type client_credentials (401 otherwise); the listing and /reddit/api/info.json need a
 // bearer authorization (401 without one); info.json answers every t3_ id of its id parameter
-// as a post marked removed (the fixture's "removed on Reddit"). Node 22's built-in modules only.
+// as a post marked removed (the fixture's "removed on Reddit"). GET /requests answers the
+// in-memory log of the last 2000 request paths with their queries (/requests and /health left
+// out), and GET /redirect/STATUS/N/ID answers STATUS with a Location to the same route with N-1
+// or, at N 1, to ok.xml with run set to the run marker and ID and target=ID, at this origin or,
+// with to=other, at this server's own IPv4 address (redirects within a site,
+// priitkustala/ai-news#108). Node 22's built-in modules only.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -23,6 +28,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.FIXTURE_PORT ?? 8081);
 const OVERSIZED_BYTES = 3 * 1024 * 1024;
+const REQUEST_LOG_LIMIT = 2000;
+const requestLog = [];
 // A 1x1 PNG, for the image addresses of the seeded items.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 
@@ -112,10 +119,29 @@ function send(response, status, type, body) {
   response.end(body);
 }
 
+function redirect(request, response, url, { run, origin }, status, hops, id) {
+  let location;
+  if (hops > 1) location = `${origin}/redirect/${status}/${hops - 1}/${id}${url.search}`;
+  else {
+    const query = new URLSearchParams(url.search);
+    query.set('run', `${run}-${id}`);
+    query.set('target', id);
+    const address = (request.socket.localAddress ?? '127.0.0.1').replace(/^::ffff:/, '');
+    const base = query.get('to') === 'other' ? `http://${address}:${PORT}` : origin;
+    location = `${base}/feeds/ok.xml?${query}`;
+  }
+  response.writeHead(status, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store', Location: location });
+  response.end(`fixture redirect ${status}\n`);
+}
+
 const server = http.createServer((request, response) => {
   const url = new URL(request.url ?? '/', 'http://fixtures.local');
   const p = { ...params(url), origin: `http://${request.headers.host ?? `localhost:${PORT}`}` };
   let match;
+  if (url.pathname !== '/requests' && url.pathname !== '/health') {
+    requestLog.push(url.pathname + url.search);
+    if (requestLog.length > REQUEST_LOG_LIMIT) requestLog.splice(0, requestLog.length - REQUEST_LOG_LIMIT);
+  }
   if (process.env.FIXTURE_LOG_REQUESTS === '1') process.stdout.write(`request ${new Date().toISOString()} ${request.method} ${url.pathname}\n`);
   if (url.pathname === '/entities/never-request.dtd') {
     process.stdout.write('CANARY: /entities/never-request.dtd was requested\n');
@@ -134,6 +160,10 @@ const server = http.createServer((request, response) => {
   if (url.pathname === '/reddit/api/v1/access_token' && request.method === 'POST') return void redditToken(request, response);
   if (request.method !== 'GET' && request.method !== 'HEAD') return send(response, 405, 'text/plain', 'method not allowed\n');
   if (url.pathname === '/health') return send(response, 200, 'text/plain', 'ok\n');
+  if (url.pathname === '/requests') return send(response, 200, 'application/json', JSON.stringify({ requests: requestLog }));
+  if ((match = url.pathname.match(/^\/redirect\/(\d{3})\/([1-9])\/([A-Za-z0-9-]+)$/))) {
+    return redirect(request, response, url, p, Number(match[1]), Number(match[2]), match[3]);
+  }
   if ((match = url.pathname.match(/^\/status\/(\d{3})\/[A-Za-z0-9-]+$/))) {
     return send(response, Number(match[1]), 'text/plain', `fixture status ${match[1]}\n`);
   }
