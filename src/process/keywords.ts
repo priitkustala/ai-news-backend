@@ -7,18 +7,23 @@
 // AI-specific by their admission rule (W10 K1), so a `reddit` source counts as AI-specific by
 // its type (src/process/relevance.ts).
 //
-// The active production sources (Locked, News sources: the 11 proposed feeds and the
-// Anthropic mirror) whose whole feed is AI-specific, exactly. The three other active sources
-// are general: simon-willison (everything feed), google-research-blog and Tech Policy Press.
+// The sources of config/sources.json whose whole feed is AI-specific, exactly. The two others
+// are general: nvidia-blog (company news beyond AI) and techpolicy-press (technology policy
+// beyond AI); simon-willison is read from its AI tag feed (priitkustala/ai-news#108).
 export const AI_SOURCE_IDS: readonly string[] = [
   'anthropic-news-mirror',
   'deepmind-blog',
   'eu-ai-act-newsletter',
   'federal-register-ai',
   'github-blog-ai',
+  'google-ai-blog',
+  'google-research-blog',
   'huggingface-blog',
+  'import-ai',
   'mit-news-ai',
+  'mit-technology-review-ai',
   'openai-news',
+  'simon-willison',
   'techcrunch-ai',
 ];
 

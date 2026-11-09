@@ -1,0 +1,189 @@
+{
+  "sources": [
+    {
+      "id": "openai-news",
+      "name": "OpenAI News",
+      "feed_url": "https://openai.com/news/rss.xml",
+      "source_type": "feed",
+      "default_categories": [
+        "releases"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1
+    },
+    {
+      "id": "deepmind-blog",
+      "name": "Google DeepMind blog",
+      "feed_url": "https://deepmind.google/blog/rss.xml",
+      "source_type": "feed",
+      "default_categories": [
+        "releases",
+        "research"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1
+    },
+    {
+      "id": "huggingface-blog",
+      "name": "Hugging Face blog",
+      "feed_url": "https://huggingface.co/blog/feed.xml",
+      "source_type": "feed",
+      "default_categories": [
+        "releases",
+        "business"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1
+    },
+    {
+      "id": "google-research-blog",
+      "name": "Google Research blog",
+      "feed_url": "https://research.google/blog/rss/",
+      "source_type": "feed",
+      "default_categories": [
+        "research"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1
+    },
+    {
+      "id": "mit-news-ai",
+      "name": "MIT News AI topic",
+      "feed_url": "https://news.mit.edu/rss/topic/artificial-intelligence2",
+      "source_type": "feed",
+      "default_categories": [
+        "research"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1
+    },
+    {
+      "id": "eu-ai-act-newsletter",
+      "name": "EU AI Act Newsletter",
+      "feed_url": "https://artificialintelligenceact.substack.com/feed",
+      "source_type": "feed",
+      "default_categories": [
+        "policy"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1
+    },
+    {
+      "id": "techpolicy-press",
+      "name": "Tech Policy Press",
+      "feed_url": "https://www.techpolicy.press/rss/feed.xml",
+      "source_type": "feed",
+      "default_categories": [
+        "policy"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1
+    },
+    {
+      "id": "federal-register-ai",
+      "name": "US Federal Register",
+      "feed_url": "https://www.federalregister.gov/api/v1/documents.rss?conditions%5Bterm%5D=%22artificial+intelligence%22&order=newest",
+      "source_type": "feed",
+      "default_categories": [
+        "policy"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1
+    },
+    {
+      "id": "techcrunch-ai",
+      "name": "TechCrunch AI",
+      "feed_url": "https://techcrunch.com/category/artificial-intelligence/feed/",
+      "source_type": "feed",
+      "default_categories": [
+        "business",
+        "releases"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1
+    },
+    {
+      "id": "github-blog-ai",
+      "name": "GitHub blog AI and ML",
+      "feed_url": "https://github.blog/ai-and-ml/feed/",
+      "source_type": "feed",
+      "default_categories": [
+        "business"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1
+    },
+    {
+      "id": "simon-willison",
+      "name": "Simon Willison's Weblog",
+      "feed_url": "https://simonwillison.net/tags/ai.atom",
+      "source_type": "feed",
+      "default_categories": [
+        "releases",
+        "business"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1
+    },
+    {
+      "id": "anthropic-news-mirror",
+      "name": "Anthropic News",
+      "feed_url": "https://rsshub.bestblogs.dev/anthropic/news",
+      "source_type": "feed",
+      "default_categories": [
+        "releases",
+        "research"
+      ],
+      "display_policy": "title-link",
+      "source_weight": 1
+    },
+    {
+      "id": "google-ai-blog",
+      "name": "Google AI blog",
+      "feed_url": "https://blog.google/innovation-and-ai/technology/ai/rss/",
+      "source_type": "feed",
+      "default_categories": [
+        "releases",
+        "research"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1
+    },
+    {
+      "id": "nvidia-blog",
+      "name": "NVIDIA blog",
+      "feed_url": "https://blogs.nvidia.com/feed/",
+      "source_type": "feed",
+      "default_categories": [
+        "releases",
+        "business"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1
+    },
+    {
+      "id": "mit-technology-review-ai",
+      "name": "MIT Technology Review AI",
+      "feed_url": "https://www.technologyreview.com/topic/artificial-intelligence/feed",
+      "source_type": "feed",
+      "default_categories": [
+        "research",
+        "business"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1
+    },
+    {
+      "id": "import-ai",
+      "name": "Import AI",
+      "feed_url": "https://importai.substack.com/feed",
+      "source_type": "feed",
+      "default_categories": [
+        "research",
+        "policy"
+      ],
+      "display_policy": "feed-summary",
+      "source_weight": 1
+    }
+  ]
+}
