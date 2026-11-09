@@ -455,6 +455,12 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   '108-AC-03c': (ctx) => redirectCase(ctx, 301, 1, 'case-03c-rd', { to: 'other' }),
   '108-AC-03d': (ctx) => redirectCase(ctx, 301, 3, 'case-03d-rd'),
 
+  // priitkustala/ai-news#109 rows: a feed summary ends at a sentence (B-09).
+  '109-AC-01a': (ctx) => summaryCase(ctx, 'long'),
+  '109-AC-02a': (ctx) => summaryCase(ctx, 'short'),
+  '109-AC-03a': (ctx) => summaryCase(ctx, 'nosentence'),
+  '109-AC-04a': (ctx) => summaryCase(ctx, 'empty'),
+
   // ai-news-frontend rows.
   'AC-03a': (ctx) => ({ sources: [source('fixture-hostile-title', 'Fixture feed with a script title', fixtureFeed(ctx, 'hostile-title.xml'))] }),
   'AC-03b': (ctx) => ({
@@ -680,6 +686,18 @@ function redirectCase(ctx: SeedContext, status: number, hops: number, id: string
   return {
     sources: [source('fixture-ok', 'Fixture feed that succeeds', fixtureFeed(ctx, 'ok.xml')), caseSource],
     manifest: () => ({ case_source_id: caseSource.id, case_id: id, ok_source_id: 'fixture-ok' }),
+  };
+}
+
+// The sets of priitkustala/ai-news#109 (above): the fixture feed with summaries of four lengths as the
+// feed-summary source fixture-summary, and the mirror shaped feed as anthropic-news-mirror (title-link,
+// as in AC-28c); `marker` is the case the row reads (long, short, nosentence, empty).
+function summaryCase(ctx: SeedContext, marker: string): Extra {
+  const summary = source('fixture-summary', 'Fixture feed with summaries of four lengths', fixtureFeed(ctx, 'summary-cut.xml'));
+  return {
+    sources: [summary],
+    adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = fixtureFeed(ctx, 'mirror.xml'); },
+    manifest: () => ({ summary_source_id: summary.id, mirror_source_id: 'anthropic-news-mirror', case_marker: marker }),
   };
 }
 
