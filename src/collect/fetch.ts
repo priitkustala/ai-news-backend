@@ -9,7 +9,8 @@
 // HTTP status) is final at once. A paced source (arXiv) waits for its turn before every attempt.
 // A caller may set the method, request headers and a body (the Reddit Data API's token and
 // bearer requests, S-07, priitkustala/ai-news#44); the limits are the same. Node 22's built-in
-// fetch, no dependency.
+// fetch, no dependency. A caller may also set its own timeout and number of attempts (the article
+// page and robots reads of the digest step, priitkustala/ai-news-backend#55).
 
 export const FETCH_ATTEMPTS = 3;
 export const FETCH_BACKOFF_MS = [250, 750];
@@ -64,16 +65,20 @@ async function readBounded(response: Response): Promise<string> {
 
 // A thrown fetch or body-stream error as a SourceFailure: a timeout or a network failure is
 // transient; its cause code (for example UND_ERR_SOCKET) is kept, never a message text.
-function classify(error: unknown, stage: string): SourceFailure {
+function classify(error: unknown, stage: string, timeoutMs = FETCH_TIMEOUT_MS): SourceFailure {
   if (error instanceof SourceFailure) return error;
   if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
-    return new SourceFailure('timeout', `no complete answer within ${FETCH_TIMEOUT_MS} ms (${stage})`, true);
+    return new SourceFailure('timeout', `no complete answer within ${timeoutMs} ms (${stage})`, true);
   }
   const cause = error instanceof Error ? (error.cause as { code?: string } | undefined)?.code : undefined;
   return new SourceFailure('network', `the connection failed ${stage}${cause ? ` (${cause})` : ''}`, true);
 }
 
-export type FetchOptions = { paced?: boolean; method?: string; headers?: Record<string, string>; body?: string };
+export type FetchOptions = {
+  paced?: boolean; method?: string; headers?: Record<string, string>; body?: string;
+  // Instead of FETCH_TIMEOUT_MS and FETCH_ATTEMPTS when given.
+  timeoutMs?: number; attempts?: number;
+};
 
 const dropWww = (host: string) => host.toLowerCase().replace(/^www\./, '');
 
@@ -109,7 +114,7 @@ async function attempt(url: string, options: FetchOptions, answered?: () => void
       response = await fetch(address, {
         method: options.method ?? 'GET',
         redirect: 'manual',
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        signal: AbortSignal.timeout(options.timeoutMs ?? FETCH_TIMEOUT_MS),
         headers: {
           accept: 'application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9', 'user-agent': 'ai-news-backend ingest',
           ...options.headers,
@@ -117,7 +122,7 @@ async function attempt(url: string, options: FetchOptions, answered?: () => void
         ...(options.body === undefined ? {} : { body: options.body }),
       });
     } catch (error) {
-      throw classify(error, 'before the headers');
+      throw classify(error, 'before the headers', options.timeoutMs);
     } finally {
       answered?.();
     }
@@ -135,21 +140,21 @@ async function attempt(url: string, options: FetchOptions, answered?: () => void
       return await readBounded(response);
     } catch (error) {
       if (error instanceof SourceFailure) await response.body?.cancel().catch(() => undefined);
-      throw classify(error, 'while reading the body');
+      throw classify(error, 'while reading the body', options.timeoutMs);
     }
   }
 }
 
-// The body of the feed at `url`, or a SourceFailure after at most FETCH_ATTEMPTS attempts;
-// with `paced`, each attempt waits for its turn at the arXiv gate.
+// The body of the feed at `url`, or a SourceFailure after at most FETCH_ATTEMPTS attempts (or
+// `attempts`); with `paced`, each attempt waits for its turn at the arXiv gate.
 export async function fetchFeed(url: string, options: FetchOptions = {}): Promise<{ body: string; attempts: number }> {
   for (let n = 1; ; n += 1) {
     const answered = options.paced ? await arxivTurn() : undefined;
     try {
       return { body: await attempt(url, options, answered), attempts: n };
     } catch (error) {
-      const failure = classify(error, 'during the request');
-      if (!failure.transient || n >= FETCH_ATTEMPTS) {
+      const failure = classify(error, 'during the request', options.timeoutMs);
+      if (!failure.transient || n >= (options.attempts ?? FETCH_ATTEMPTS)) {
         throw n > 1 ? new SourceFailure(failure.kind, `${failure.message.slice(failure.kind.length + 2)} (after ${n} attempts)`) : failure;
       }
       await sleep(FETCH_BACKOFF_MS[n - 1] ?? FETCH_BACKOFF_MS[FETCH_BACKOFF_MS.length - 1]);
