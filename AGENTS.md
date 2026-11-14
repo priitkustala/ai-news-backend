@@ -35,7 +35,7 @@ the host, because the box has no container engine. `<compose>` stands for
 | Measure feed quality (priitkustala/ai-news-backend#4) | box | `node dist/cli.js measure` (runs the pipeline on the frozen sample and labels under `fixtures/validation-sample/` and the hostile fixtures under `fixtures/validation/`; prints the measurement report, values only, no verdict while OD-26 is open) |
 | Scoped scenarios | box | `cd e2e && npx playwright test --project=api --grep "@story-40"` |
 | One scenario | box | `cd e2e && npx playwright test --project=api tests/bootstrap/40-40-a-gateway-answers.spec.ts` |
-| Unit and integration tests | - | none yet: no unit-tested module exists; the first feature story adds the runner as an approved dependency |
+| Unit tests | box | `npm run build`, then `node --test test/*.test.mjs` (Node's built-in runner, no dependency; the tests import the built `dist/` modules) |
 | Lint and format | - | none approved yet; the type check is `npm run build` (strict) |
 
 ### A story's own instance (priitkustala/ai-news#65)

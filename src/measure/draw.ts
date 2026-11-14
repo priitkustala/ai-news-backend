@@ -1,7 +1,7 @@
 // The draw-sample command (priitkustala/ai-news#75, SI-3a; Locked B-25: a frozen 7-day sample,
 // at most 20 items per source, labelled by the owner). It fetches each source of a --sources
 // file once, with the job's own fetch and parser (src/collect/fetch.ts: only the configured
-// address, no redirect followed, a timeout and a size bound; src/collect/parse.ts), and writes
+// address, a permanent redirect within the site followed (at most two), a timeout and a size bound; src/collect/parse.ts), and writes
 // into an --out folder that git does not track: sample.json in the committed format of
 // fixtures/validation-sample/, labels.json with one empty label set per item (label_origin
 // unlabelled), labelling-table.md for the owner and sources.json, a copy of the input. The
