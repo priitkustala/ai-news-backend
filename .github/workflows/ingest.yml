@@ -2,6 +2,8 @@
 # Manual trigger only; the schedule is added by a later task once the owner decides OD-09 and OD-34.
 # The secret INGEST_DATABASE_URL is set by the owner in the repository settings, never in a file.
 # This item runs the job only as a dry run.
+# priitkustala/ai-news-backend#55: with the dry run off, the step digest writes the article digests after the ingest;
+# its secret DIGEST_API_KEY is set by the owner in the repository settings, reaches that step only, never a file.
 name: ingest (manual dry run)
 
 on:
@@ -22,7 +24,7 @@ permissions:
 jobs:
   ingest:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       DATABASE_URL: ${{ secrets.INGEST_DATABASE_URL }}
       RUN_DATE: ${{ inputs.run_date }}
@@ -45,6 +47,11 @@ jobs:
           dry_run_flag=""
           if [ "$DRY_RUN" = "true" ]; then dry_run_flag="--dry-run"; fi
           node dist/cli.js ingest "$run_date" $dry_run_flag
+      - name: digest
+        if: ${{ inputs.dry_run == false }}
+        env:
+          DIGEST_API_KEY: ${{ secrets.DIGEST_API_KEY }}
+        run: node dist/cli.js digest
       - name: connection check (after)
         run: |
           node --input-type=module -e "import pg from 'pg'; const client = new pg.Client({ connectionString: process.env.DATABASE_URL }); await client.connect(); const result = await client.query('select current_user as role, (select count(*) from public.ingestion_runs)::integer as ingestion_runs, (select count(*) from public.items)::integer as items'); console.log(JSON.stringify(result.rows[0])); await client.end();"
