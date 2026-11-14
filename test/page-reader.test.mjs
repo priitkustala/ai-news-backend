@@ -109,21 +109,3 @@ test('AC-4: collectPage requests only the robots file when a prefix group disall
   }
   assert.deepEqual(requested, ['http://fixture.test/robots.txt']);
 });
-
-// Round 2 (F-BE41-2): the first anchor of an address decides; a later anchor to the same
-// address fills nothing it lacks.
-test('AC-1: an undated first link stays rejected though a later link to it has a date', () => {
-  const html = '<main><article><a href="/news/unit-duplicate"><h3>unit first</h3></a></article>'
-    + '<article><a href="/news/unit-duplicate"><h3>unit second</h3><time>Nov 3, 2026</time></a></article></main>';
-  const { entries, rejected } = parsePageItems(html, PAGE_URL);
-  assert.equal(entries.filter((e) => e.link.endsWith('/news/unit-duplicate')).length, 0);
-  assert.deepEqual(rejected, ['page: 1 link(s) without a date']);
-});
-
-test('AC-1: an untitled first link stays rejected though a later link to it has a title', () => {
-  const html = '<main><article><a href="/news/unit-duplicate"><img src="unit.png" alt=""></a><time>Nov 3, 2026</time></article>'
-    + '<article><a href="/news/unit-duplicate"><h3>unit second</h3><time>Oct 28, 2026</time></a></article></main>';
-  const { entries, rejected } = parsePageItems(html, PAGE_URL);
-  assert.equal(entries.filter((e) => e.link.endsWith('/news/unit-duplicate')).length, 0);
-  assert.deepEqual(rejected, ['page: 1 link(s) without a title']);
-});

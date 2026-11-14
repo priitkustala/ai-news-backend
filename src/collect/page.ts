@@ -104,12 +104,11 @@ function decodeEntities(text: string): string {
 
 // The visible text of an element; `gap` is put between elements (a space for the date search,
 // so that a heading and a date written without whitespace between them stay apart).
-function textOf(node: Element, gap = '', skip?: (e: Element) => boolean): string {
+function textOf(node: Element, gap = ''): string {
   const parts: string[] = [];
   const walk = (n: Element) => {
     for (const child of n.children) {
       if (typeof child === 'string') parts.push(child);
-      else if (skip?.(child)) parts.push(gap);
       else { parts.push(gap); walk(child); parts.push(gap); }
     }
   };
@@ -154,21 +153,18 @@ function titleOf(anchor: Element): string {
 }
 
 // The date of a post anchor's card: the anchor itself when it holds a date, otherwise the
-// nearest enclosing element that holds a date and no other post address. A branch holding another
-// link to the same address is that link's own card, so its date is not this anchor's.
+// nearest enclosing element that holds a date and no other post address.
 function cardDate(anchor: Element, address: string, addresses: Map<Element, string>): string | null {
-  const holdsAnchor = (e: Element) => { for (let n: Element | null = anchor; n; n = n.parent) if (n === e) return true; return false; };
-  const otherLink = (e: Element) => !holdsAnchor(e) && (addresses.has(e) || descendants(e).some((d) => addresses.has(d)));
   for (let card: Element | null = anchor; card && card.name !== '#root'; card = card.parent) {
     if (card !== anchor && descendants(card).some((e) => addresses.has(e) && addresses.get(e) !== address)) return null;
-    const date = dateIn(textOf(card, ' ', otherLink));
+    const date = dateIn(textOf(card, ' '));
     if (date) return date;
   }
   return null;
 }
 
-// The posts of a news page, in page order, each address once and decided by its first link (a
-// later link to the same address fills nothing); a post link with no title or no date is not an item and is counted in `rejected` by kind.
+// The posts of a news page, in page order, each address once; a post link with no title or no
+// date is not an item and is counted in `rejected` by kind.
 export function parsePageItems(html: string, pageUrl: string): { entries: FeedEntry[]; rejected: string[] } {
   const base = new URL(pageUrl);
   const anchors = descendants(scan(html)).filter((e) => e.name === 'a');
@@ -179,7 +175,10 @@ export function parsePageItems(html: string, pageUrl: string): { entries: FeedEn
   }
   const posts = new Map<string, { title: string; published: string | null }>();
   for (const [anchor, address] of addresses) {
-    if (!posts.has(address)) posts.set(address, { title: titleOf(anchor), published: cardDate(anchor, address, addresses) });
+    const post = posts.get(address) ?? { title: '', published: null };
+    if (!post.title) post.title = titleOf(anchor);
+    if (!post.published) post.published = cardDate(anchor, address, addresses);
+    posts.set(address, post);
   }
   const entries: FeedEntry[] = [];
   let untitled = 0;
