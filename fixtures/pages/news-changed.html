@@ -1,0 +1,29 @@
+<!doctype html>
+<!-- Synthetic fixture for priitkustala/ai-news-backend#41: the news listing after a layout change. The
+     same invented posts appear as plain text and link to /articles/ paths only, so no /news/ link
+     is left. Every title, link and text in it is invented. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Fixture news listing, changed layout</title>
+</head>
+<body>
+  <main>
+    <div class="post">
+      <span>{{run}}-page-1 synthetic announcement one</span>
+      <span>{{page_date_0}}</span>
+      <a href="/articles/{{run}}-example-model-launch">Open</a>
+    </div>
+    <div class="post">
+      <span>{{run}}-page-2 synthetic announcement two</span>
+      <span>{{page_date_6}}</span>
+      <a href="/articles/{{run}}-example-research-note">Open</a>
+    </div>
+    <div class="post">
+      <span>{{run}}-page-3 synthetic announcement three</span>
+      <span>{{page_date_13}}</span>
+      <a href="/articles/{{run}}-example-policy-update">Open</a>
+    </div>
+  </main>
+</body>
+</html>

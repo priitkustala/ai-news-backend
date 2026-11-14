@@ -21,7 +21,7 @@ export type SourceRow = {
   id: string;
   name: string;
   feed_url: string;
-  source_type?: 'feed' | 'reddit';
+  source_type?: 'feed' | 'reddit' | 'page';
   community?: string | null;
   default_categories?: Category[];
   image_policy?: 'licensed' | 'owner-accepted hotlink' | 'placeholder';
@@ -191,6 +191,13 @@ function fixtureFeed(ctx: SeedContext, name: string, extra: Record<string, strin
   return `${ctx.fixtures}/feeds/${name}?${query}`;
 }
 
+// A fixture news page on the fixture feed server (priitkustala/ai-news-backend#41); `name` is a
+// page under fixtures/pages/, or blocked/<page> for the address the fixture robots file disallows.
+function fixturePage(ctx: SeedContext, name: string): string {
+  const query = new URLSearchParams({ run: ctx.run, at: ctx.now.toISOString() });
+  return `${ctx.fixtures}/pages/${name}?${query}`;
+}
+
 function failing(ctx: SeedContext, status: number, id: string): string {
   return `${ctx.fixtures}/status/${status}/${id}`;
 }
@@ -203,6 +210,17 @@ function redditSource(ctx: SeedContext, community: string, listing: Record<strin
   const query = new URLSearchParams({ run: ctx.run, at: ctx.now.toISOString(), ...listing });
   return source(`reddit-${community.toLowerCase()}`, `r/${community}`, `${ctx.fixtures}/reddit/r/${community}/new.json?${query}`,
     { source_type: 'reddit', community, display_policy: 'title-link' });
+}
+
+function pageSet(ctx: SeedContext, name: string): Extra {
+  const id = 'anthropic-news-mirror';
+  return {
+    adjust: (set) => { Object.assign(src(set, id), { source_type: 'page', feed_url: fixturePage(ctx, name) }); },
+    manifest: () => ({
+      page_source_id: id,
+      page_titles: ['one', 'two', 'three'].map((word, index) => `${ctx.run}-page-${index + 1} synthetic announcement ${word}`),
+    }),
+  };
 }
 
 function od41(ctx: SeedContext, owner: 'reddit' | 'feed'): Extra {
@@ -400,6 +418,12 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   'OD-41-feed-first': (ctx) => od41(ctx, 'feed'),
   'AC-28c': (ctx) => ({ adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = fixtureFeed(ctx, 'mirror.xml'); } }),
   'AC-28d': (ctx) => ({ adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = failing(ctx, 503, 'anthropic-news-mirror'); } }),
+  // The vendor's own news page (priitkustala/ai-news-backend#41): the mirror row as a page source
+  // reading the fixture listing (41-AC-03), the listing after a layout change (41-AC-02), or the
+  // listing at an address the fixture robots file disallows (41-AC-04).
+  '41-AC-03': (ctx) => pageSet(ctx, 'news.html'),
+  '41-AC-02': (ctx) => pageSet(ctx, 'news-changed.html'),
+  '41-AC-04': (ctx) => pageSet(ctx, 'blocked/news.html'),
 
   // Repair round 2 of S-03 (Astra round 1 findings on AC-06's Other share; OD-15, B-06).
   'F-S03-1': (ctx, set) => {
