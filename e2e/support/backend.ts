@@ -11,13 +11,15 @@ function quote(arg: string): string {
   return /^[A-Za-z0-9_./:=@-]+$/.test(arg) ? arg : `"${arg.replace(/(["\\$`])/g, '\\$1')}"`;
 }
 
-export function runBackend(args: string[], env: Record<string, string> = {}): CommandResult {
+// input, when given, is written to the command's standard input (summaries-apply, priitkustala/ai-news-backend#37).
+export function runBackend(args: string[], env: Record<string, string> = {}, input?: string): CommandResult {
   const prefix = requireEnv('E2E_BACKEND_COMMAND', "the command line of the backend's command-line entry");
   const line = [prefix, ...args.map(quote)].join(' ');
   const result = spawnSync(line, {
     shell: true,
     encoding: 'utf8',
     env: { ...process.env, ...env },
+    input,
     timeout: 10 * 60 * 1000,
     maxBuffer: 64 * 1024 * 1024,
   });

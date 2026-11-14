@@ -484,6 +484,7 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   '109-AC-02a': (ctx) => summaryCase(ctx, 'short'),
   '109-AC-03a': (ctx) => summaryCase(ctx, 'nosentence'),
   '109-AC-04a': (ctx) => summaryCase(ctx, 'empty'),
+  '37-AC-01': (ctx) => storedSummaries(ctx),
 
   // ai-news-frontend rows.
   'AC-03a': (ctx) => ({ sources: [source('fixture-hostile-title', 'Fixture feed with a script title', fixtureFeed(ctx, 'hostile-title.xml'))] }),
@@ -722,6 +723,39 @@ function summaryCase(ctx: SeedContext, marker: string): Extra {
     sources: [summary],
     adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = fixtureFeed(ctx, 'mirror.xml'); },
     manifest: () => ({ summary_source_id: summary.id, mirror_source_id: 'anthropic-news-mirror', case_marker: marker }),
+  };
+}
+
+// The set of priitkustala/ai-news-backend#37 (above): stored summaries a host script may fill. The
+// feed-summary source fixture-stored-summaries on stored-summaries.xml, whose copies are 4 hours old,
+// and six stored items of that source: a null, an empty, a 12-character and a 200-character summary,
+// and two items without one that the feed delivers again, earlier than the stored copies at the same
+// weight, so that the copy wins (B-07): <run>-model-kept with no summary and <run>-feed-wins with the
+// 100 characters of FEED_TEXT_100.
+function storedSummaries(ctx: SeedContext): Extra {
+  const FEED_TEXT_100 = 'Synthetic fixture text: an invented lab reports a safety review of its AI model ahead of its launch.';
+  const LONG_SUMMARY = 'Synthetic stored summary: an invented operator reports that its AI data centre used less power this quarter, and it plans to publish the figures in a short fixture note that no real outlet ever wrote.';
+  const at = new Date(Math.floor((ctx.now.getTime() - 4 * HOUR) / 1000) * 1000);
+  const stored = source('fixture-stored-summaries', 'Fixture feed of stored summaries', fixtureFeed(ctx, 'stored-summaries.xml', { at: at.toISOString() }));
+  const cases: [string, string, string | null][] = [
+    ['sum-null', 'synthetic brief on an AI chip roadmap', null],
+    ['sum-empty', 'synthetic memo on AI benchmark results', ''],
+    ['sum-short', 'synthetic digest of an AI coding assistant update', 'Twelve chars'],
+    ['sum-long', 'synthetic report on AI data centre power use', LONG_SUMMARY],
+    ['model-kept', 'synthetic note on an AI model card', null],
+    ['feed-wins', 'synthetic note on an AI safety review', null],
+  ];
+  const items = cases.map(([slug, words, summary], index) =>
+    item(stored, `${ctx.run}-${slug}`, `${ctx.run}-${slug} ${words}`, 'releases', ago(ctx, (index + 1) * 10 * 60 * 1000), { summary }));
+  return {
+    sources: [stored],
+    items,
+    manifest: () => ({
+      source_id: stored.id,
+      ids: Object.fromEntries(cases.map(([slug], index) => [slug, items[index].id])),
+      long_summary_length: LONG_SUMMARY.length,
+      feed_text_100: FEED_TEXT_100,
+    }),
   };
 }
 

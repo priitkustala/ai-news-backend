@@ -14,12 +14,15 @@ import { notify } from './notify/notify.js';
 import { measure } from './measure/measure.js';
 import { drawSample } from './measure/draw.js';
 import { MeasureError, sampleFolder } from './measure/sample.js';
+import { summariesApply, summariesPending } from './summaries.js';
 
 const USAGE = `Usage: node dist/cli.js <command> [arguments]
 
 Commands of the job and the local test environment:
   ingest <run-date> [--dry-run]     run the ingestion job for a date (YYYY-MM-DD); --dry-run writes nothing
   notify <run-date>                 send the run date's one push notification to the owner's subscriptions (YYYY-MM-DD)
+  summaries-pending [--limit N]     list the items without a usable summary, newest first (default 30), one JSON line each
+  summaries-apply                   store model-written summaries read as JSON lines of id and text on standard input
   seed <fixture-set> <run-marker>   reset the local database to the base seed plus a fixture set
   sign-in <persona>                 development sign-in of a seeded persona (${PERSONAS.join(', ')}); prints its access token
   scan-secrets <path>...            scan a repository, a folder or a file for this stack's seeded secrets
@@ -75,6 +78,23 @@ async function main(argv: string[]): Promise<void> {
       const report = await notify(parseRunDate(args[0]), log);
       print(report);
       if (report.status === 'failed') process.exitCode = 1;
+      return;
+    }
+    case 'summaries-pending': {
+      let limit: number | undefined;
+      if (args.length === 2 && args[0] === '--limit' && /^[1-9][0-9]*$/.test(args[1]) && Number.isSafeInteger(Number(args[1]))) {
+        limit = Number(args[1]);
+      } else if (args.length !== 0) {
+        throw new UsageError('summaries-pending takes no argument or --limit N with N a positive whole number.');
+      }
+      for (const row of await summariesPending(limit)) print(row);
+      return;
+    }
+    case 'summaries-apply': {
+      if (args.length !== 0) throw new UsageError('summaries-apply takes no argument; it reads JSON lines on standard input.');
+      const chunks: Buffer[] = [];
+      for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+      print(await summariesApply(Buffer.concat(chunks).toString('utf8'), log));
       return;
     }
     case 'seed': {

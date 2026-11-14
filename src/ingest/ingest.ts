@@ -10,7 +10,9 @@
 // processing below, and not at a failed run (src/retain/retain.ts). A copy of a stored
 // item's canonical address takes over that item's row (its id stays) only when it wins
 // under B-07 (a higher source weight, or the same and an earlier time); otherwise it changes
-// nothing. In the same transaction as the run's new items, every
+// nothing. A model-written summary (priitkustala/ai-news-backend#37) survives a winning copy that
+// brings no summary or one under 40 characters, and a feed summary of 40 characters or more
+// replaces it with method feed. In the same transaction as the run's new items, every
 // stored item is clustered again with the earlier ones, scored, and the arXiv items beyond the
 // daily cap marked (S-04,
 // src/process/apply.ts), so the `feed` view shows one representative per cluster by score.
@@ -46,6 +48,7 @@ import { processEntries, PROCESSING_VERSION, type ItemToStore } from './process.
 import { storeOtherShare } from './other-share.js';
 import { representativeOrder } from '../process/dedupe.js';
 import { applyProcessing, type ProcessingCounts } from '../process/apply.js';
+import { USABLE_SUMMARY_MIN_CHARS } from '../summaries.js';
 import { retain, type RetentionCounts } from '../retain/retain.js';
 import { RedditSession, redditCredentials, redditItems, reportedSourceId, type RedditFields } from '../collect/reddit.js';
 
@@ -331,8 +334,12 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
                values ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, 'processed', $11, $13, $14, $15, $16)
                on conflict (canonical_url) do update
                   set source_id = excluded.source_id, title = excluded.title, published_at = excluded.published_at,
-                      fetched_at = excluded.fetched_at, image_url = excluded.image_url, summary = excluded.summary,
-                      summary_method = excluded.summary_method, relevance_method = excluded.relevance_method,
+                      fetched_at = excluded.fetched_at, image_url = excluded.image_url,
+                      summary = case when i.summary_method = 'model' and char_length(btrim(coalesce(excluded.summary, ''))) < $18
+                                     then i.summary else excluded.summary end,
+                      summary_method = case when i.summary_method = 'model' and char_length(btrim(coalesce(excluded.summary, ''))) < $18
+                                            then i.summary_method else excluded.summary_method end,
+                      relevance_method = excluded.relevance_method,
                       category = excluded.category, category_method = excluded.category_method,
                       processing_version = excluded.processing_version, raw = excluded.raw, post_url = excluded.post_url,
                       external_url = excluded.external_url, author_handle = excluded.author_handle
@@ -344,7 +351,8 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
               [item.id, item.canonical_url, item.source_id, item.title, item.published_at, item.summary,
                 item.summary === null ? null : 'feed', item.relevance_method, item.category, item.category_method, PROCESSING_VERSION,
                 done.weightOf.get(item.source_id) ?? 0, item.reddit ? JSON.stringify(item.reddit.raw) : null,
-                item.reddit?.post_url ?? null, item.reddit?.external_url ?? null, item.reddit?.author_handle ?? null, !item.reddit],
+                item.reddit?.post_url ?? null, item.reddit?.external_url ?? null, item.reddit?.author_handle ?? null, !item.reddit,
+                USABLE_SUMMARY_MIN_CHARS],
             );
             for (const row of result.rows) {
               if (row.inserted) inserted += 1;

@@ -55,6 +55,32 @@ export function seed(fixtureSet: string, run: string): Record<string, unknown> {
   return manifest;
 }
 
+// The summary commands of priitkustala/ai-news-backend#37: summaries-pending prints one JSON object per
+// line for each item without a usable summary (id, title, link, source_name, category, feed_text);
+// summaries-apply reads JSON lines of id and text on standard input and prints applied, skipped and
+// refused. A line of summaries-pending that is not a JSON object fails the scenario.
+export type PendingResult = CommandResult & { rows: Record<string, unknown>[] };
+
+export function summariesPending(limit?: number): PendingResult {
+  const result = runBackend(['summaries-pending', ...(limit === undefined ? [] : ['--limit', String(limit)])]);
+  const rows = result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const value: unknown = JSON.parse(line);
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('summaries-pending printed a line that is not a JSON object.');
+    }
+    return value as Record<string, unknown>;
+  });
+  return { ...result, rows };
+}
+
+export type ApplyResult = CommandResult & { report: Record<string, unknown> | undefined };
+
+export function summariesApply(lines: Record<string, unknown>[]): ApplyResult {
+  const input = lines.map((line) => JSON.stringify(line)).join('\n');
+  const result = runBackend(['summaries-apply'], {}, input === '' ? '' : `${input}\n`);
+  return { ...result, report: lastJsonObject(result.stdout) };
+}
+
 export type MeasureResult = CommandResult & { report: Record<string, unknown> | undefined };
 
 // With no arguments, exactly the measure command of AC-25; #75 passes --sample-dir <folder>.
