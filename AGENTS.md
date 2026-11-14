@@ -10,6 +10,7 @@ The backend services of ai-news: they collect AI-specific news, process it and s
 - Language/runtime: TypeScript on Node 22 (OD-03), compiled by tsc 7.0.2
 - Frameworks: none; pg 8.23.1 for PostgreSQL
 - Deployment: the ingest command runs as a GitHub Actions scheduled workflow of this repository against Supabase (OD-01 B), built at Release and run; nothing is deployed by #40
+- Database deployment: the workflow deploy database (.github/workflows/deploy-database.yml) loads config/sources.json into the hosted database after the owner's Approve in the environment production; nothing is written to the hosted database by hand (owner, 2026-11-14).
 - Owning team: ai-news; team context: `ai-news-team-context`
 
 ## Build, Test, Run

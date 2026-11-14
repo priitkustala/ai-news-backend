@@ -1,0 +1,38 @@
+# priitkustala/ai-news-backend#57 (MD-5): the database deployment of production.
+# Loads config/sources.json into the hosted database with the command staging runs at its build.
+# Runs only from main, only after the owner's Approve in the environment production.
+# The secret MIGRATION_DATABASE_URL is an environment secret the owner sets, never in a file.
+name: deploy database
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - config/sources.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-database-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    env:
+      MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: sources
+        run: node dist/cli.js seed-sources config/sources.json
