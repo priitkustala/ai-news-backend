@@ -128,8 +128,8 @@
     {
       "id": "anthropic-news-mirror",
       "name": "Anthropic News",
-      "feed_url": "https://rsshub.bestblogs.dev/anthropic/news",
-      "source_type": "feed",
+      "feed_url": "https://www.anthropic.com/news",
+      "source_type": "page",
       "default_categories": [
         "releases",
         "research"

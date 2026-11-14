@@ -24,7 +24,7 @@ test('every row is well formed and the ids are unique', () => {
   const { sources } = read();
   assert.equal(new Set(sources.map((s) => s.id)).size, sources.length, 'ids are unique');
   for (const s of sources) {
-    assert.equal(s.source_type, 'feed', `${s.id}: source_type`);
+    assert.equal(s.source_type, s.id === 'anthropic-news-mirror' ? 'page' : 'feed', `${s.id}: source_type`);
     assert.ok(['feed-summary', 'title-link'].includes(s.display_policy), `${s.id}: display_policy`);
     assert.ok(Array.isArray(s.default_categories) && s.default_categories.every((c) => CATEGORIES.has(c)), `${s.id}: categories`);
     assert.ok(typeof s.source_weight === 'number' && s.source_weight > 0, `${s.id}: source_weight`);
@@ -51,6 +51,16 @@ for (const [id, [feedUrl, categories]] of Object.entries(CHANGED)) {
 
 test('exactly one anthropic-news-mirror row', () => {
   assert.equal(read().sources.filter((s) => s.id === 'anthropic-news-mirror').length, 1);
+});
+
+test('the anthropic-news-mirror row reads the vendor\'s own news page (priitkustala/ai-news-backend#41)', () => {
+  const row = read().sources.find((s) => s.id === 'anthropic-news-mirror');
+  assert.equal(row.name, 'Anthropic News');
+  assert.equal(row.source_type, 'page');
+  assert.equal(row.feed_url, 'https://www.anthropic.com/news');
+  assert.deepEqual(row.default_categories, ['releases', 'research']);
+  assert.equal(row.display_policy, 'title-link');
+  assert.equal(row.source_weight, 1);
 });
 
 function drawSample(sourcesFile) {
