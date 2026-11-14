@@ -48,36 +48,118 @@ async function applyMigration(client: Client, file: string, sql: string): Promis
   await client.query('insert into app_private.schema_migrations (version) values ($1)', [file]);
 }
 
+// The report of applyMigrations: names, codes and counts only, never an error's text or a
+// value read from the database (priitkustala/ai-news-backend#58).
+export type MigrationReport = {
+  mode: 'dry-run' | 'apply';
+  pending: string[];
+  applied: string[];
+  failed: string | null;
+  error_code: string | null;
+  files_total: number;
+  ledger_total: number;
+  owner_only_findings: number;
+};
+
+// An SQLSTATE (42601, 3D000) or a system code (ECONNREFUSED) as the error carries it; else unknown.
+function errorCode(error: unknown): string {
+  const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+  return typeof code === 'string' && /^[A-Z0-9_]{3,20}$/.test(code) ? code : 'unknown';
+}
+
+// `apply-migrations [--dry-run]`: applies only the files of the folder (db/migrations; tests pass
+// another) that the ledger does not hold, each in its own transaction, then the owner-only check of
+// the exposed schema and the schema reload of PostgREST; the first failure stops it. A dry run
+// applies every pending file in one transaction, each through the same check, runs the final check,
+// and always rolls back. It never throws: a failure is the report's failed file and error code.
+export async function applyMigrations({ dryRun, dir = MIGRATIONS }: { dryRun: boolean; dir?: string }): Promise<MigrationReport> {
+  const report: MigrationReport = {
+    mode: dryRun ? 'dry-run' : 'apply',
+    pending: [],
+    applied: [],
+    failed: null,
+    error_code: null,
+    files_total: 0,
+    ledger_total: 0,
+    owner_only_findings: 0,
+  };
+  let current: string | null = null;
+  const fail = (error: unknown) => {
+    // The first failure is the one reported.
+    if (report.failed !== null || report.error_code !== null) return;
+    report.failed = current;
+    if (error instanceof OpenSchemaError) report.owner_only_findings = error.findings.length;
+    else report.error_code = errorCode(error);
+  };
+  try {
+    const files = fs.readdirSync(dir).filter((file) => /^\d{4}_[a-z0-9_]+\.sql$/.test(file)).sort();
+    report.files_total = files.length;
+    await withClient('MIGRATION_DATABASE_URL', async (client) => {
+      try {
+        if (dryRun) await client.query('begin');
+        try {
+          await client.query('create schema if not exists app_private');
+          await client.query('revoke all on schema app_private from public');
+          await client.query(
+            'create table if not exists app_private.schema_migrations (version text primary key, applied_at timestamptz not null default now())',
+          );
+          await client.query('revoke all on table app_private.schema_migrations from public, anon, authenticated');
+          const done = new Set((await client.query<{ version: string }>('select version from app_private.schema_migrations')).rows.map((r) => r.version));
+          report.pending = files.filter((file) => !done.has(file));
+          for (const file of report.pending) {
+            current = file;
+            const sql = fs.readFileSync(path.join(dir, file), 'utf8');
+            if (dryRun) {
+              await applyMigration(client, file, sql);
+            } else {
+              await inTransaction(client, () => applyMigration(client, file, sql));
+              report.applied.push(file);
+            }
+          }
+          current = null;
+          const findings = await exposedSchemaFindings(client);
+          if (!findings) throw new Error('The owner-only check app_private.exposed_schema_findings() is missing after the migrations.');
+          report.owner_only_findings = findings.length;
+          if (findings.length === 0 && !dryRun) await client.query("notify pgrst, 'reload schema'");
+        } finally {
+          if (dryRun) await client.query('rollback');
+        }
+      } catch (error) {
+        fail(error);
+      }
+      try {
+        const ledger = await client.query<{ present: boolean }>("select to_regclass('app_private.schema_migrations') is not null as present");
+        report.ledger_total = ledger.rows[0].present
+          ? (await client.query<{ count: number }>('select count(*)::integer as count from app_private.schema_migrations')).rows[0].count
+          : 0;
+      } catch (error) {
+        fail(error);
+      }
+    });
+  } catch (error) {
+    fail(error);
+  }
+  return report;
+}
+
 export async function migrate(): Promise<Record<string, unknown>> {
   const ingestPassword = requireEnv('INGEST_DB_PASSWORD');
   // Role passwords cannot be bound as parameters; the generated value is base64url only.
   if (!/^[A-Za-z0-9_-]{16,}$/.test(ingestPassword)) throw new UsageError('INGEST_DB_PASSWORD must be base64url (from `keys`).');
-  const files = fs.readdirSync(MIGRATIONS).filter((file) => /^\d{4}_[a-z0-9_]+\.sql$/.test(file)).sort();
 
-  const applied = await withClient('MIGRATION_DATABASE_URL', async (client) => {
-    await client.query('create schema if not exists app_private');
-    await client.query('revoke all on schema app_private from public');
-    await client.query(
-      'create table if not exists app_private.schema_migrations (version text primary key, applied_at timestamptz not null default now())',
+  const report = await applyMigrations({ dryRun: false });
+  if (report.failed !== null || report.error_code !== null || report.owner_only_findings > 0) {
+    throw new Error(
+      `The migrations did not apply: failed ${report.failed ?? 'none'}, error code ${report.error_code ?? 'none'}, owner-only findings ${report.owner_only_findings}.`,
     );
-    await client.query('revoke all on table app_private.schema_migrations from public, anon, authenticated');
-    const done = new Set((await client.query<{ version: string }>('select version from app_private.schema_migrations')).rows.map((r) => r.version));
-    const now: string[] = [];
-    for (const file of files) {
-      if (done.has(file)) continue;
-      const sql = fs.readFileSync(path.join(MIGRATIONS, file), 'utf8');
-      await inTransaction(client, () => applyMigration(client, file, sql));
-      now.push(file);
-    }
+  }
+
+  const relations = await withClient('MIGRATION_DATABASE_URL', async (client) => {
     await client.query(`alter role ingest_job with login password '${ingestPassword}'`);
-    const findings = await exposedSchemaFindings(client);
-    if (!findings) throw new Error('The owner-only check app_private.exposed_schema_findings() is missing after the migrations.');
-    if (findings.length > 0) throw new Error(`The exposed schema is not owner-only: ${describeFindings(findings)}`);
-    const relations = await client.query<{ count: number }>(
+    const result = await client.query<{ count: number }>(
       "select count(*)::integer as count from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'f')",
     );
-    await client.query("notify pgrst, 'reload schema'");
-    return { now, relations: relations.rows[0].count };
+    return result.rows[0].count;
   });
 
   const personaIds: Record<string, string> = {};
@@ -93,9 +175,9 @@ export async function migrate(): Promise<Record<string, unknown>> {
   });
 
   return {
-    migrations_applied: applied.now,
-    migrations_total: files.length,
-    owner_only_check: { relations: applied.relations, findings: 0 },
+    migrations_applied: report.applied,
+    migrations_total: report.files_total,
+    owner_only_check: { relations, findings: 0 },
     personas: PERSONAS,
     base_seed: 'loaded',
   };
