@@ -15,6 +15,8 @@ test(
   '37-AC-05a: summaries-apply applies once and skips the repeat, and a batch with a refused line applies the valid lines',
   { tag: ['@journey-ingest', '@surface-job', '@story-37'] },
   async ({ request }) => {
+    // The row took 17.6 and 9.2 seconds alone and 8.5 seconds in the ingest group; it needs more than the default 30 second timeout under load.
+    test.setTimeout(60_000);
     // Given: set 37-AC-01
     const run = runMarker();
     const manifest = seed('37-AC-01', run);
