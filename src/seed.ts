@@ -34,11 +34,12 @@ export async function loadSet(client: Client, set: FixtureSet, windowEnd: Date =
       await client.query(
         `insert into public.items (id, canonical_url, source_id, title, published_at, image_url, summary, category, status,
                                    category_method, relevance_method, ai_relevant, processing_version, fetched_at,
-                                   raw, post_url, external_url, author_handle)
+                                   raw, post_url, external_url, author_handle, digest, digest_method, digest_attempts)
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'seed', 'seed', true, 'seed', coalesce($10::timestamptz, now()),
-                 $11, $12, $13, $14)`,
+                 $11, $12, $13, $14, $15, $16, $17)`,
         [i.id, i.canonical_url, i.source_id, i.title, i.published_at, i.image_url, i.summary, i.category, i.status, i.fetched_at ?? null,
-          i.raw ?? null, i.post_url ?? null, i.external_url ?? null, i.author_handle ?? null],
+          i.raw ?? null, i.post_url ?? null, i.external_url ?? null, i.author_handle ?? null,
+          i.digest ?? null, i.digest ? 'model' : null, i.digest_attempts ?? 0],
       );
     }
     for (const r of set.runs) {
