@@ -34,6 +34,7 @@ export default defineConfig({
     // It is an emulation, not the device.
     { name: 'iphone', grepInvert: /@surface-api|@surface-job|@surface-data/, use: { ...devices['iPhone 15'] } },
     // Scenarios for a published interface need no browser: tag them @surface-api.
-    { name: 'api', grep: /@surface-api|@surface-job|@surface-data/, use: {} },
+    // Slowest ingest rows under load before this budget: 37-AC-04-a 84s, 5-AC-22-c 37.7s, 44-AC-27-a 34.5s (#61).
+    { name: 'api', grep: /@surface-api|@surface-job|@surface-data/, timeout: 60_000, use: {} },
   ],
 });
