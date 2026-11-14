@@ -4,7 +4,7 @@
 // output (tests/README-testids.md, Named commands and outputs); messages go to standard error.
 import { loadLocalEnv, UsageError } from './env.js';
 import { generateKeys } from './keys.js';
-import { checkMigration, migrate } from './migrate.js';
+import { applyMigrations, checkMigration, migrate } from './migrate.js';
 import { seed } from './seed.js';
 import { seedSources } from './seed-sources.js';
 import { isPersona, PERSONAS, signIn } from './auth.js';
@@ -38,6 +38,7 @@ Commands of the job and the local test environment:
 Set-up of the local test environment:
   keys                              generate this stack's local keys into the git-ignored .env files (once)
   migrate                           apply the migrations, create the personas and load the base seed (safe to run again)
+  apply-migrations [--dry-run]       apply only the pending migrations (no password, persona or seed); --dry-run applies them and rolls everything back
   seed-sources <file>               replace the configured sources with the rows of a sources file (the format of
                                     config/sources.json); loads no item (safe to run again)
   check-migration <sql-file>        apply a migration-shaped file as migrate would, report the owner-only check's
@@ -144,6 +145,13 @@ async function main(argv: string[]): Promise<void> {
     case 'migrate':
       print(await migrate());
       return;
+    case 'apply-migrations': {
+      if (args.length > 1 || (args.length === 1 && args[0] !== '--dry-run')) throw new UsageError('apply-migrations takes no argument or --dry-run.');
+      const report = await applyMigrations({ dryRun: args.length === 1 });
+      print(report);
+      if (report.failed !== null || report.error_code !== null || report.owner_only_findings > 0) process.exitCode = 1;
+      return;
+    }
     case 'check-migration': {
       if (args.length !== 1) throw new UsageError('check-migration takes one SQL file.');
       print(await checkMigration(args[0]));
