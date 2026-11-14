@@ -8,8 +8,10 @@
 // source's recorded failure; without Reddit credentials they are skipped with no request.
 // Every requests entry and skip names a Reddit source as `reddit` (R-21). An item over the per-item limit is rejected and recorded with its
 // source (src/collect/parse.ts); it never fails the source or stops its siblings. arXiv
-// sources are paced (src/collect/fetch.ts).
+// sources are paced (src/collect/fetch.ts). A page source, a vendor's own news page with no feed
+// (priitkustala/ai-news-backend#41), goes through the same lanes and is read by src/collect/page.ts.
 import { fetchFeed, SourceFailure } from './fetch.js';
+import { collectPage } from './page.js';
 import { parseFeedItems, type FeedEntry } from './parse.js';
 import { reportedSourceId, type RedditPost, type RedditSession } from './reddit.js';
 
@@ -60,7 +62,7 @@ async function collectReddit(source: CollectSource, reddit: RedditSession, reque
 
 // `reddit` is the run's Data API session, or null when the run has no Reddit credentials.
 export async function collect(sources: CollectSource[], reddit: RedditSession | null = null): Promise<CollectResult> {
-  const collected = (s: CollectSource) => s.source_type === 'feed' || (s.source_type === 'reddit' && reddit !== null);
+  const collected = (s: CollectSource) => s.source_type === 'feed' || s.source_type === 'page' || (s.source_type === 'reddit' && reddit !== null);
   const skipped = sources.filter((s) => !collected(s)).map((s) => ({
     source_id: reportedSourceId(s),
     reason: s.source_type === 'reddit' ? 'no Reddit credentials set' : `source type ${s.source_type} is not collected by this job`,
@@ -87,6 +89,9 @@ export async function collect(sources: CollectSource[], reddit: RedditSession | 
       const requested = () => requests.push({ source_id: reportedSourceId(source), source_type: source.source_type, host });
       if (source.source_type === 'reddit') {
         results[index] = await collectReddit(source, reddit as RedditSession, requested);
+      } else if (source.source_type === 'page') {
+        requested();
+        results[index] = await collectPage(source);
       } else {
         requested();
         results[index] = await collectOne(source);
