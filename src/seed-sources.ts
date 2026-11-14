@@ -3,7 +3,9 @@
 // the real ingestion of the committed list. The file is parsed as draw-sample parses it, so a bad
 // file is refused with its usage error before any connection. Runs with the migration role, like
 // the seed; touches no item, run or other table, and is safe to run again. Items of a replaced
-// source stay until the next ingest, whose retention deletes them (B-22).
+// source whose id is not in the new file are deleted by the next ingest's retention (B-22). Items
+// of a source whose id is also in the new file stay, and a caller that wants them gone removes
+// them itself.
 import { inTransaction, withClient } from './db.js';
 import { readSources } from './measure/draw.js';
 
