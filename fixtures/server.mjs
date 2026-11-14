@@ -18,7 +18,11 @@
 // out), and GET /redirect/STATUS/N/ID answers STATUS with a Location to the same route with N-1
 // or, at N 1, to ok.xml with run set to the run marker and ID and target=ID, at this origin or,
 // with to=other, at this server's own IPv4 address (redirects within a site,
-// priitkustala/ai-news#108). Node 22's built-in modules only.
+// priitkustala/ai-news#108). /pages/NAME.html and /pages/blocked/NAME.html serve the synthetic
+// news pages under pages/, filled like the feeds and with {{page_date_0}}, {{page_date_6}} and
+// {{page_date_13}} as the "Mon D, YYYY" text (UTC) of at minus 0, 6 and 13 days, and /robots.txt
+// disallows /pages/blocked/ to every agent (the page reader, priitkustala/ai-news-backend#41).
+// Node 22's built-in modules only.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -42,8 +46,18 @@ function params(url) {
   };
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function pageDate(at, days) {
+  const day = new Date(at.getTime() - days * 24 * 3600 * 1000);
+  return `${MONTHS[day.getUTCMonth()]} ${day.getUTCDate()}, ${day.getUTCFullYear()}`;
+}
+
 function fill(template, { run, at, origin }) {
   return template
+    .replaceAll('{{page_date_0}}', pageDate(at, 0))
+    .replaceAll('{{page_date_6}}', pageDate(at, 6))
+    .replaceAll('{{page_date_13}}', pageDate(at, 13))
     .replaceAll('{{origin}}', origin)
     .replaceAll('{{run}}', run)
     .replaceAll('{{at_iso}}', at.toISOString())
@@ -176,6 +190,12 @@ const server = http.createServer((request, response) => {
     if (!fs.existsSync(file)) return send(response, 404, 'text/plain', 'no such fixture feed\n');
     const body = fill(fs.readFileSync(file, 'utf8'), p);
     return send(response, 200, body.includes('<feed') ? 'application/atom+xml; charset=utf-8' : 'application/rss+xml; charset=utf-8', body);
+  }
+  if (url.pathname === '/robots.txt') return send(response, 200, 'text/plain', 'User-agent: *\nDisallow: /pages/blocked/\n');
+  if ((match = url.pathname.match(/^\/pages\/(?:blocked\/)?([a-z0-9-]+\.html)$/))) {
+    const file = path.join(ROOT, 'pages', match[1]);
+    if (!fs.existsSync(file)) return send(response, 404, 'text/plain', 'no such fixture page\n');
+    return send(response, 200, 'text/html; charset=utf-8', fill(fs.readFileSync(file, 'utf8'), p));
   }
   if (url.pathname === '/entities/xxe.txt') return send(response, 200, 'text/plain', `xxe-${p.run}`);
   if (url.pathname.startsWith('/reddit/') && !hasBearer(request)) {
