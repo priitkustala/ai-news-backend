@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic fixture feed for priitkustala/ai-news-backend#37: every title and link is invented. The first item gives no
+     summary (a stored model-written summary must survive it); the second gives one of 100 characters (it replaces one). -->
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed of stored summaries (fixture)</title>
+    <link>https://example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}}-model-kept synthetic note on an AI model card</title><link>https://example.com/ai-news-fixture/{{run}}-model-kept</link><pubDate>{{at_rfc822}}</pubDate><guid>https://example.com/ai-news-fixture/{{run}}-model-kept</guid></item>
+    <item><title>{{run}}-feed-wins synthetic note on an AI safety review</title><link>https://example.com/ai-news-fixture/{{run}}-feed-wins</link><description>Synthetic fixture text: an invented lab reports a safety review of its AI model ahead of its launch.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://example.com/ai-news-fixture/{{run}}-feed-wins</guid></item>
+  </channel>
+</rss>
