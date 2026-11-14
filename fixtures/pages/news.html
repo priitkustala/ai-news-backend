@@ -1,0 +1,65 @@
+<!doctype html>
+<!-- Synthetic fixture for priitkustala/ai-news-backend#41: a news listing page shaped like a vendor's
+     news page. Every title, link and text in it is invented; none is a real post. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Fixture news listing</title>
+</head>
+<body>
+  <header>
+    <nav><a href="/">Home</a> <a href="/careers">Careers</a></nav>
+  </header>
+  <main>
+    <section class="featured">
+      <article class="card">
+        <a class="card-link" href="/news/{{run}}-example-model-launch">
+          <h3 class="card-title">{{run}}-page-1 synthetic announcement one</h3>
+          <time class="card-date">{{page_date_0}}</time>
+        </a>
+        <p class="card-body">{{run}}-page-body Invented text that a reader of the card sees first.</p>
+      </article>
+    </section>
+    <section class="list">
+      <ul>
+        <li>
+          <article class="card">
+            <a class="card-link" href="/news/{{run}}-example-research-note">
+              <h3 class="card-title">{{run}}-page-2 synthetic announcement two</h3>
+              <time class="card-date">{{page_date_6}}</time>
+            </a>
+            <p class="card-body">{{run}}-page-body Invented text of the second card.</p>
+          </article>
+        </li>
+        <li>
+          <article class="card">
+            <a class="card-link" href="/news/{{run}}-example-policy-update">
+              <h3 class="card-title">{{run}}-page-3 synthetic announcement three</h3>
+              <time class="card-date">{{page_date_13}}</time>
+            </a>
+            <p class="card-body">{{run}}-page-body Invented text of the third card.</p>
+          </article>
+        </li>
+        <li>
+          <article class="card">
+            <a class="card-link" href="/news/{{run}}-example-undated">
+              <h3 class="card-title">{{run}}-page-4 synthetic card without a date</h3>
+            </a>
+          </article>
+        </li>
+        <li>
+          <article class="card">
+            <a class="card-link" href="/careers/{{run}}-example-role">
+              <h3 class="card-title">{{run}}-careers synthetic open role</h3>
+              <time class="card-date">{{page_date_0}}</time>
+            </a>
+          </article>
+        </li>
+      </ul>
+    </section>
+    <aside class="more">
+      <a href="/news/{{run}}-example-model-launch">Read the first synthetic announcement &amp; more</a>
+    </aside>
+  </main>
+</body>
+</html>
