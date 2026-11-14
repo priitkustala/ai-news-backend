@@ -22,6 +22,10 @@
 // news pages under pages/, filled like the feeds and with {{page_date_0}}, {{page_date_6}} and
 // {{page_date_13}} as the "Mon D, YYYY" text (UTC) of at minus 0, 6 and 13 days, and /robots.txt
 // disallows /pages/blocked/ to every agent (the page reader, priitkustala/ai-news-backend#41).
+// The article digest (priitkustala/ai-news-backend#55) gets a stand-in for the model vendor's chat
+// completions at POST /model/MODE/KEY/chat/completions (its calls recorded per KEY and read back at
+// GET /model-calls/KEY) and synthetic article pages at /digest-pages/KIND/NAME.html, of which
+// /robots.txt disallows /digest-pages/blocked/.
 // Node 22's built-in modules only.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -36,6 +40,130 @@ const REQUEST_LOG_LIMIT = 2000;
 const requestLog = [];
 // A 1x1 PNG, for the image addresses of the seeded items.
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+
+// The stand-in model's replies (priitkustala/ai-news-backend#55), every text invented. Counted with
+// the digest's own rule (a sentence ends at . ! or ? before white space or the end): STUB_DIGEST
+// 820 characters and 5 sentences; STUB_LEN_599 599 and 5; STUB_LEN_1201 1201 and 5;
+// STUB_THREE_SENTENCES 704 and 3; STUB_NINE_SENTENCES 711 and 9; STUB_LINK 623 and 5, with a link.
+const STUB_DIGEST = [
+  'An invented research lab released a small, open model that condenses long technical reports into short briefings for busy engineering teams in energy, water and transport.',
+  'The lab said the model was trained on synthetic documents only, and that it runs on a single laptop graphics card without any cloud service at all.',
+  'Early testers at three fictional companies reported that the briefings kept the key figures of each report while dropping repeated passages and lengthy footnotes.',
+  'The release also includes an evaluation kit with two hundred made-up reports, so that other teams can compare their own tools against the same set of documents.',
+  'The lab plans a larger version next spring and asked readers to send feedback on accuracy, speed and the clarity of the generated briefings before the end of the calendar year.',
+].join(' ');
+const STUB_LEN_599 = [
+  'An invented city council tested a small AI assistant that answers questions about bus timetables in four fictional districts.',
+  'The council said the assistant reads only the published timetables and never stores the questions that residents type into it.',
+  'During the trial the assistant answered most questions correctly, but it struggled with late night routes and holiday changes.',
+  'The council will publish a short report on the trial next month, and plans to ask residents for their views on the service.',
+  'A second trial with ferry timetables is planned for the summer if the first report is positive.',
+].join(' ');
+const STUB_LEN_1201 = [
+  'An invented robotics company introduced a warehouse robot that uses a compact vision model to recognise boxes and bags of many shapes, colours and sizes on crowded shelves in large regional warehouses.',
+  'The company said the robot learned from a large set of synthetic warehouse scenes, which it generated with a simulator instead of collecting photographs from real customer sites, and it tested the robot on more than one thousand simulated layouts before any real pilot began.',
+  'In a fictional pilot at two distribution centres, the robot picked items with far fewer errors than the previous system and needed much less help from the staff who supervise the night shifts and the busy weekend shifts.',
+  'The company also published a safety note that explains how the robot slows down near people, how it reports a blocked aisle, and how an operator can stop it from a handheld panel at any time during a shift.',
+  'Pricing was not announced, but the company expects to offer the robot to small warehouses early next year through a monthly rental plan that includes maintenance, software updates and a training course for the local warehouse team, and it will report on the first installations in a public note.',
+].join(' ');
+const STUB_THREE_SENTENCES = [
+  'An invented university group described a new method for training a small language model on spreadsheets, so that the model can explain the trends in a table in plain words for readers who do not work with numbers every day.',
+  'The group said the method needs far less computing power than earlier approaches because it reuses a compact encoder for the table cells and only trains a thin layer on top of it, which keeps the cost of an experiment low.',
+  'The authors released their synthetic training tables and a small benchmark of made-up business reports, and they invited other groups to test the method on new kinds of tables, including weather records, school timetables and invented sports league results.',
+].join(' ');
+const STUB_NINE_SENTENCES = [
+  'An invented startup launched a note taking app with a built-in AI helper for students.',
+  'The helper sorts notes into topics and suggests short titles for each one.',
+  'The startup said all processing happens on the device of the user.',
+  'No note is sent to a server unless the user turns on the sync feature.',
+  'Early reviewers in a fictional magazine praised the clean design of the app.',
+  'They also noted that the helper sometimes mixes up notes with similar words.',
+  'The startup promised a fix for that problem in the next monthly update.',
+  'A paid plan with shared notebooks for small teams will follow later this year.',
+  'The free version stays available and keeps every feature of the first release, including the offline mode.',
+].join(' ');
+const STUB_LINK = [
+  'An invented weather service released an open AI model that predicts rain over small regions a few hours ahead with fine detail.',
+  'The service said the model was trained on synthetic radar maps, and that it runs in minutes on an ordinary office computer.',
+  'In a fictional test season the model warned of short heavy showers earlier than the older system that forecasters used before.',
+  'The service published the model and its documentation at https://example.com/x for other forecasters who want to try it.',
+  'It also plans a version for snow and hail next winter and will ask local farmers for their feedback on the early forecasts.',
+].join(' ');
+const MODEL_REPLIES = {
+  valid: STUB_DIGEST,
+  len599: STUB_LEN_599,
+  len1201: STUB_LEN_1201,
+  three: STUB_THREE_SENTENCES,
+  nine: STUB_NINE_SENTENCES,
+  link: STUB_LINK,
+  none: 'NONE',
+  fail401second: STUB_DIGEST,
+};
+const MODEL_CALL_KEYS_LIMIT = 200;
+const modelCalls = new Map();
+
+// The paragraphs of the synthetic article pages (priitkustala/ai-news-backend#55), every text invented.
+const DIGEST_PARAGRAPHS = [
+  'An invented laboratory described a compact AI model that turns long maintenance logs into short daily notes for the crews of a fictional tram network.',
+  'The team said the model reads only the logs that the crews already write by hand, and that no passenger data of any kind is used in the work.',
+  'In a trial of six made-up weeks the notes pointed to worn brake parts earlier than the older checklist, according to the laboratory &amp; its partners.',
+  'Engineers at the fictional depot said the notes saved them time, although they still check every warning before a tram leaves the yard in the morning.',
+  'The laboratory plans to publish the trial data as a synthetic set, so that other groups can repeat the &quot;log to note&quot; experiment on their own.',
+  'A spokesperson added that the model is small enough to run on the depot&#39;s own computer &lt;without&gt; any connection to an outside service.',
+];
+
+function digestText(paragraphs) {
+  return Array.from({ length: paragraphs }, (_, n) => `<p>Section ${n + 1}.&nbsp;${DIGEST_PARAGRAPHS[n % DIGEST_PARAGRAPHS.length]}</p>`).join('\n');
+}
+
+// A synthetic article page of KIND for NAME: long about 4500 characters of text, big about 15000,
+// short 300, marker the long text with the string NAME-marker once in a paragraph; blocked is the
+// long page (its path is disallowed by /robots.txt).
+function digestPage(kind, name) {
+  let body;
+  if (kind === 'short') {
+    body = `<p>${'A short invented notice about an AI tool for a fictional library. '.repeat(5).slice(0, 300)}</p>`;
+  } else {
+    body = digestText(kind === 'big' ? 95 : 29);
+    if (kind === 'marker') body += `\n<p>The invented trial closes with the reference ${name}-marker for the fixture.</p>`;
+  }
+  return `<!doctype html>\n<html><head><meta charset="utf-8"><title>Fixture page</title>\n` +
+    `<style>body { font-family: sans-serif; } .hidden { display: none; }</style>\n` +
+    `<script>window.fixtureScriptText = 'script text that is never part of the article';</script></head>\n` +
+    `<body><!-- a fixture comment that is never part of the article -->\n<article>\n${body}\n</article>\n` +
+    `<noscript>noscript text that is never part of the article</noscript></body></html>\n`;
+}
+
+// The stand-in for the vendor's chat completions (priitkustala/ai-news-backend#55): the call is recorded
+// under KEY and answered in the vendor's form with the reply of MODE.
+async function modelCompletion(request, response, mode, key) {
+  if (!hasBearer(request)) {
+    return send(response, 401, 'application/json', JSON.stringify({ error: { message: 'stub', type: 'invalid_request_error' } }));
+  }
+  let body;
+  try {
+    body = JSON.parse(await readBody(request, 65536));
+  } catch {
+    return send(response, 400, 'application/json', JSON.stringify({ error: { message: 'stub', type: 'invalid_request_error' } }));
+  }
+  if (!modelCalls.has(key)) {
+    modelCalls.set(key, []);
+    if (modelCalls.size > MODEL_CALL_KEYS_LIMIT) modelCalls.delete(modelCalls.keys().next().value);
+  }
+  const calls = modelCalls.get(key);
+  const n = calls.length + 1;
+  calls.push({ n, body });
+  if (mode === 'fail401second' && n === 2) {
+    return send(response, 401, 'application/json', JSON.stringify({ error: { message: 'stub', type: 'invalid_request_error' } }));
+  }
+  return send(response, 200, 'application/json', JSON.stringify({
+    id: `stub-${key}-${n}`,
+    object: 'chat.completion',
+    model: 'gpt-5-nano',
+    choices: [{ index: 0, message: { role: 'assistant', content: MODEL_REPLIES[mode] }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 1200, completion_tokens: 210, total_tokens: 1410 },
+  }));
+}
 
 function params(url) {
   const run = url.searchParams.get('run') ?? '';
@@ -172,6 +300,24 @@ const server = http.createServer((request, response) => {
     return;
   }
   if (url.pathname === '/reddit/api/v1/access_token' && request.method === 'POST') return void redditToken(request, response);
+  if ((match = url.pathname.match(/^\/model\/([A-Za-z0-9-]{1,64})\/([A-Za-z0-9-]{1,64})\/chat\/completions$/)) && request.method === 'POST') {
+    if (!Object.hasOwn(MODEL_REPLIES, match[1])) return send(response, 404, 'text/plain', 'no such stand-in mode\n');
+    return void modelCompletion(request, response, match[1], match[2]);
+  }
+  if ((match = url.pathname.match(/^\/model-calls\/([A-Za-z0-9-]{1,64})$/)) && request.method === 'GET') {
+    return send(response, 200, 'application/json', JSON.stringify({ calls: modelCalls.get(match[1]) ?? [] }));
+  }
+  if ((match = url.pathname.match(/^\/digest-pages\/(long|big|short|marker|missing|slow|blocked)\/([A-Za-z0-9-]{1,80})\.html$/))
+    && request.method === 'GET') {
+    if (match[1] === 'missing') return send(response, 404, 'text/plain', 'no such fixture page\n');
+    const page = digestPage(match[1] === 'slow' || match[1] === 'blocked' ? 'long' : match[1], match[2]);
+    if (match[1] !== 'slow') return send(response, 200, 'text/html; charset=utf-8', page);
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    response.flushHeaders();
+    const late = setTimeout(() => response.end(page), 11_000);
+    response.on('close', () => clearTimeout(late));
+    return;
+  }
   if (request.method !== 'GET' && request.method !== 'HEAD') return send(response, 405, 'text/plain', 'method not allowed\n');
   if (url.pathname === '/health') return send(response, 200, 'text/plain', 'ok\n');
   if (url.pathname === '/requests') return send(response, 200, 'application/json', JSON.stringify({ requests: requestLog }));
@@ -191,7 +337,7 @@ const server = http.createServer((request, response) => {
     const body = fill(fs.readFileSync(file, 'utf8'), p);
     return send(response, 200, body.includes('<feed') ? 'application/atom+xml; charset=utf-8' : 'application/rss+xml; charset=utf-8', body);
   }
-  if (url.pathname === '/robots.txt') return send(response, 200, 'text/plain', 'User-agent: *\nDisallow: /pages/blocked/\n');
+  if (url.pathname === '/robots.txt') return send(response, 200, 'text/plain', 'User-agent: *\nDisallow: /pages/blocked/\nDisallow: /digest-pages/blocked/\n');
   if ((match = url.pathname.match(/^\/pages\/(?:blocked\/)?([a-z0-9-]+\.html)$/))) {
     const file = path.join(ROOT, 'pages', match[1]);
     if (!fs.existsSync(file)) return send(response, 404, 'text/plain', 'no such fixture page\n');

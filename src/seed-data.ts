@@ -48,6 +48,10 @@ export type ItemRow = {
   post_url?: string | null;
   external_url?: string | null;
   author_handle?: string | null;
+  // The model's digest of the article (priitkustala/ai-news-backend#55); null or absent: none yet.
+  digest?: string | null;
+  // The digest attempts so far; the column's default 0 when absent.
+  digest_attempts?: number;
 };
 
 export type RunRow = { run_date: string; status: string; started_at: string; ended_at: string | null };
@@ -485,6 +489,20 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   '109-AC-03a': (ctx) => summaryCase(ctx, 'nosentence'),
   '109-AC-04a': (ctx) => summaryCase(ctx, 'empty'),
   '37-AC-01': (ctx) => storedSummaries(ctx),
+  // priitkustala/ai-news-backend#55 rows: the article digest. Each set the command reads keeps only its own
+  // items, on the synthetic article pages of the fixture server; 55-AC-08 and digests keep the base seed.
+  '55-AC-01': (ctx) => digestSet(ctx, ['long']),
+  '55-AC-02': (ctx) => digestSet(ctx, ['long', 'long', 'long']),
+  '55-AC-03': (ctx) => digestSet(ctx, ['long', 'long']),
+  '55-AC-04': (ctx) => digestSet(ctx, ['blocked', 'missing', 'slow', 'short']),
+  '55-AC-05': (ctx) => digestSet(ctx, ['long']),
+  '55-AC-06': (ctx) => digestSet(ctx, ['long', 'long'], { attempts: { 2: 3 } }),
+  '55-AC-07': (ctx) => digestSet(ctx, Array.from({ length: 45 }, () => 'big')),
+  '55-AC-08': (ctx) => keptDigest(ctx),
+  '55-AC-09': (ctx) => digestSet(ctx, ['marker']),
+  '55-AC-10': (ctx) => digestSet(ctx, ['long', 'long'], { nullSummary: [1] }),
+  '55-AC-12': (ctx) => digestSet(ctx, ['long', 'long', 'long']),
+  digests: (ctx) => storedDigests(ctx),
 
   // ai-news-frontend rows.
   'AC-03a': (ctx) => ({ sources: [source('fixture-hostile-title', 'Fixture feed with a script title', fixtureFeed(ctx, 'hostile-title.xml'))] }),
@@ -756,6 +774,104 @@ function storedSummaries(ctx: SeedContext): Extra {
       long_summary_length: LONG_SUMMARY.length,
       feed_text_100: FEED_TEXT_100,
     }),
+  };
+}
+
+// The sets of priitkustala/ai-news-backend#55 (above): the article digest. The feed-summary source
+// fixture-digest with one item per kind, each linking to the synthetic article page
+// /digest-pages/<kind>/<run>-<n>.html of the fixture server (n its position from 1), titled
+// <run>-<n> synthetic note on an AI <word> (each matches the AI keyword), in Releases, published n
+// minutes ago (the first is the newest), with an invented feed summary. `options` sets the summary of
+// the positions in nullSummary to null and the stored attempts of the positions in attempts. Only the
+// set's own items stay: the base seed's items link to real hosts, and no test reads a real page.
+const MINUTE = 60 * 1000;
+const DIGEST_WORDS = [
+  'chip roadmap', 'tutor', 'weather model', 'robot arm', 'compiler', 'translator', 'dataset', 'benchmark', 'camera',
+  'sensor', 'search tool', 'chess engine', 'music tool', 'map service', 'spell checker', 'farm planner', 'tram planner',
+  'library index', 'drug screen', 'code helper', 'image filter', 'speech tool', 'traffic study', 'energy forecast',
+  'quiz maker', 'recipe planner', 'garden guide', 'bird counter', 'ship router', 'sales report', 'news reader',
+  'text checker', 'lab notebook', 'data cleaner', 'grid planner', 'flight study', 'shop assistant', 'museum guide',
+  'tax helper', 'rail study', 'water model', 'school planner', 'sports study', 'film editor', 'stock counter',
+];
+type DigestOptions = { nullSummary?: number[]; attempts?: Record<number, number> };
+
+function digestSet(ctx: SeedContext, kinds: string[], options: DigestOptions = {}): Extra {
+  const digestSource = source('fixture-digest', 'Fixture digest source', fixtureFeed(ctx, 'ok.xml'), { source_weight: 1 });
+  const items = kinds.map((kind, index): ItemRow => {
+    const n = index + 1;
+    const word = DIGEST_WORDS[index % DIGEST_WORDS.length];
+    const summary = options.nullSummary?.includes(n) ? null : `Synthetic feed summary ${n}: an invented team shares a short note about its AI ${word}.`;
+    const row = item(digestSource, `${ctx.run}-${n}`, `${ctx.run}-${n} synthetic note on an AI ${word}`, 'releases', ago(ctx, n * MINUTE), { summary });
+    row.canonical_url = `${ctx.fixtures}/digest-pages/${kind}/${ctx.run}-${n}.html`;
+    row.id = itemId(row.canonical_url);
+    const attempts = options.attempts?.[n];
+    return attempts === undefined ? row : { ...row, digest_attempts: attempts };
+  });
+  const own = new Set(items.map((row) => row.id));
+  return {
+    sources: [digestSource],
+    items,
+    adjust: (set) => { set.items = set.items.filter((row) => own.has(row.id)); },
+    manifest: () => ({ source_id: digestSource.id, ids: items.map((row) => row.id), links: items.map((row) => row.canonical_url) }),
+  };
+}
+
+// 55-AC-08 (priitkustala/ai-news-backend#55), in the form of storedSummaries: the feed-summary source
+// fixture-digest-kept on digest-kept.xml, whose copy is 4 hours old, and the stored item <run>-kept with
+// no summary and a stored digest, published 50 minutes ago; the feed delivers the same item earlier at
+// the same weight with the 100 characters of FEED_TEXT_100, so the copy wins (B-07). The base seed stays.
+function keptDigest(ctx: SeedContext): Extra {
+  const FEED_TEXT_100 = 'Synthetic fixture text: an invented team revises its AI digest note with a later summary for a feed.';
+  // 708 characters, 5 sentences.
+  const DIGEST = [
+    'An invented AI lab published a digest tool that turns its own weekly research notes into short summaries for a fictional newsletter.',
+    'The lab said the tool works only on the notes that its staff already write, and that every summary is checked by an editor before it goes out.',
+    'In a made-up trial of eight weeks, readers of the newsletter opened the summaries more often than the full notes and asked fewer follow-up questions.',
+    'The lab plans to share the prompts it used and a small synthetic set of notes, so that other teams can test the same approach on their own material.',
+    'A later version will add short charts to each summary if the editors find that they help readers understand the figures in the notes.',
+  ].join(' ');
+  const at = new Date(Math.floor((ctx.now.getTime() - 4 * HOUR) / 1000) * 1000);
+  const kept = source('fixture-digest-kept', 'Fixture feed of a kept digest', fixtureFeed(ctx, 'digest-kept.xml', { at: at.toISOString() }));
+  const row: ItemRow = {
+    ...item(kept, `${ctx.run}-kept`, `${ctx.run}-kept synthetic note on an AI lab digest`, 'releases', ago(ctx, 50 * MINUTE), { summary: null }),
+    digest: DIGEST,
+    digest_attempts: 0,
+  };
+  return { sources: [kept], items: [row], manifest: () => ({ id: row.id, digest: DIGEST, feed_text_100: FEED_TEXT_100 }) };
+}
+
+// digests (priitkustala/ai-news-backend#55, Scope 5, for the frontend's scenarios): the base seed and three
+// items of the source fixture-digests, published 10, 20 and 30 minutes ago; the first two hold a stored
+// digest (699 and 647 characters), the third none.
+function storedDigests(ctx: SeedContext): Extra {
+  const digests = [
+    [
+      'An invented hospital group tested an AI scheduling assistant that plans the shifts of nurses across three fictional wards over a busy winter month.',
+      'The group said the assistant uses only the rota rules and the leave requests that staff already enter, and that a manager approves every plan.',
+      'During the trial the plans left fewer gaps at night, and staff reported that swaps between wards were easier to arrange than before.',
+      'The group will publish a short synthetic report on the trial and plans to extend it to two more wards in the spring if the results hold.',
+      'Staff representatives in the fictional region welcomed the trial but asked for clear rules on how the assistant treats requests for leave.',
+    ].join(' '),
+    [
+      'An invented software company released an AI code review helper that comments on small changes before a human reviewer reads them.',
+      'The company said the helper was trained on synthetic code only, and that it never stores the code of its customers after a review ends.',
+      'In a fictional study with four teams, reviews finished faster and fewer simple mistakes reached the main branch of each project.',
+      'Reviewers still made every final decision, and the company says the helper is meant to save time rather than replace their judgement.',
+      'A free plan for small open source projects is planned for next year, with paid plans for larger teams following later.',
+    ].join(' '),
+    null,
+  ];
+  const stored = source('fixture-digests', 'Fixture digests', fixtureFeed(ctx, 'ok.xml'));
+  const words = ['hospital rota', 'code review helper', 'weather service'];
+  const items = digests.map((digest, index): ItemRow => ({
+    ...item(stored, `${ctx.run}-digest-${index + 1}`, `${ctx.run}-digest-${index + 1} synthetic note on an AI ${words[index]}`, 'releases',
+      ago(ctx, (index + 1) * 10 * MINUTE)),
+    digest,
+  }));
+  return {
+    sources: [stored],
+    items,
+    manifest: () => ({ ids: items.map((row) => row.id), digest_lengths: digests.map((digest) => (digest === null ? null : digest.length)) }),
   };
 }
 

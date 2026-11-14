@@ -81,6 +81,16 @@ export function summariesApply(lines: Record<string, unknown>[]): ApplyResult {
   return { ...result, report: lastJsonObject(result.stdout) };
 }
 
+// The article digest of priitkustala/ai-news-backend#55: digest takes no argument; `env` sets DIGEST_API_KEY
+// and the test-only DIGEST_API_BASE (the fixture server's stand-in for the model vendor). Its last line is
+// the digest report: status, reason, pending, stored, article_skipped, invalid.
+export type DigestResult = CommandResult & { report: Record<string, unknown> | undefined };
+
+export function digest(env: Record<string, string>): DigestResult {
+  const result = runBackend(['digest'], env);
+  return { ...result, report: lastJsonObject(result.stdout) };
+}
+
 export type MeasureResult = CommandResult & { report: Record<string, unknown> | undefined };
 
 // With no arguments, exactly the measure command of AC-25; #75 passes --sample-dir <folder>.
