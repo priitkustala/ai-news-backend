@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parsePageItems, robotsAllows } from '../dist/collect/page.js';
+import { collectPage, parsePageItems, robotsAllows } from '../dist/collect/page.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PAGE_URL = 'http://fixture.test/pages/news.html';
@@ -77,4 +77,35 @@ test('AC-4: the group for ai-news-backend beats the group *', () => {
   assert.equal(robotsAllows(robots, '/pages/news.html'), true);
   assert.equal(robotsAllows(robots, '/pages/private/news.html'), false);
   assert.equal(robotsAllows(robots, '/pages/news.html', 'another-agent'), false);
+});
+
+// Round 2 (F-BE41-1): the group whose agent token is a prefix of the agent name applies, and a
+// group ends at its first rule line even when that line's value is empty.
+const PREFIX_GROUP = 'User-agent: *\nAllow: /\n\nUser-agent: ai-news\nDisallow: /pages/\n';
+
+test('AC-4: a group named by a prefix of the agent wins over the group *', () => {
+  assert.equal(robotsAllows(PREFIX_GROUP, '/pages/news.html'), false);
+});
+
+test('AC-4: an empty Disallow ends the agent group, so a later group of another agent does not apply', () => {
+  const robots = 'User-agent: ai-news-backend\nDisallow:\n\nUser-agent: other-bot\nDisallow: /pages/\n';
+  assert.equal(robotsAllows(robots, '/pages/news.html'), true);
+});
+
+test('AC-4: collectPage requests only the robots file when a prefix group disallows the page', async () => {
+  const requested = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    requested.push(String(url));
+    return String(url).endsWith('/robots.txt')
+      ? new Response(PREFIX_GROUP, { status: 200, headers: { 'content-type': 'text/plain' } })
+      : new Response(page('news.html'), { status: 200, headers: { 'content-type': 'text/html' } });
+  };
+  try {
+    const result = await collectPage({ id: 'unit-page', feed_url: PAGE_URL });
+    assert.deepEqual(result, { source_id: 'unit-page', ok: false, error: 'robots: the page is disallowed' });
+  } finally {
+    globalThis.fetch = original;
+  }
+  assert.deepEqual(requested, ['http://fixture.test/robots.txt']);
 });

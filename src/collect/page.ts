@@ -195,8 +195,10 @@ export function parsePageItems(html: string, pageUrl: string): { entries: FeedEn
 }
 
 // ---------------------------------------------------------------------------------------
-// Robots (RFC 9309 in the form this job needs): the group naming the agent (case-insensitive)
-// wins over the group *; within the group the longest matching Allow or Disallow path wins,
+// Robots (RFC 9309 in the form this job needs): a group applies when its agent token is a prefix
+// of the agent name (case-insensitive), the longest such token wins, and the group * applies only
+// when no named group does; a group ends at its first rule line, even one with an empty value.
+// Within the group the longest matching Allow or Disallow path wins,
 // Allow on a tie; no matching rule allows; an empty Disallow allows. `*` in a path matches any
 // characters and a final `$` anchors the end.
 
@@ -209,22 +211,25 @@ function ruleMatches(rule: string, path: string): boolean {
 }
 
 export function robotsAllows(robotsText: string, path: string, agent = ROBOTS_AGENT): boolean {
-  const groups: { agents: string[]; rules: Rule[] }[] = [];
-  let group: { agents: string[]; rules: Rule[] } | null = null;
+  const groups: { agents: string[]; rules: Rule[]; ruled: boolean }[] = [];
+  let group: { agents: string[]; rules: Rule[]; ruled: boolean } | null = null;
   for (const raw of robotsText.split(/\r\n|\r|\n/)) {
     const line = raw.replace(/#.*/, '').trim();
     const m = /^([A-Za-z-]+)\s*:\s*(.*)$/.exec(line);
     if (!m) continue;
     const [key, value] = [m[1].toLowerCase(), m[2].trim()];
     if (key === 'user-agent') {
-      if (!group || group.rules.length > 0) { group = { agents: [], rules: [] }; groups.push(group); }
+      if (!group || group.ruled) { group = { agents: [], rules: [], ruled: false }; groups.push(group); }
       group.agents.push(value.toLowerCase());
     } else if ((key === 'allow' || key === 'disallow') && group) {
+      group.ruled = true;
       if (value !== '') group.rules.push({ allow: key === 'allow', path: value });
     }
   }
-  const named = groups.filter((g) => g.agents.includes(agent.toLowerCase()));
-  const chosen = named.length > 0 ? named : groups.filter((g) => g.agents.includes('*'));
+  const name = agent.toLowerCase();
+  const token = (g: { agents: string[] }) => Math.max(-1, ...g.agents.filter((a) => a !== '' && a !== '*' && name.startsWith(a)).map((a) => a.length));
+  const longest = Math.max(-1, ...groups.map(token));
+  const chosen = longest > 0 ? groups.filter((g) => token(g) === longest) : groups.filter((g) => g.agents.includes('*'));
   let best: Rule | null = null;
   for (const rule of chosen.flatMap((g) => g.rules)) {
     if (!ruleMatches(rule.path, path)) continue;
