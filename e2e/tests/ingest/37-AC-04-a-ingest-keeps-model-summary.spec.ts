@@ -15,6 +15,8 @@ test(
   '37-AC-04a: an ingest keeps a model-written summary when the feed gives none',
   { tag: ['@journey-ingest', '@surface-job', '@story-37'] },
   async ({ request }) => {
+    // Two ingests of about ten seconds each; the row took 19 to 21 seconds alone, so the default 30 second timeout is too close under load.
+    test.setTimeout(60_000);
     // Given: <run>-model-kept stored with no summary, and a model-written summary applied to it
     const run = runMarker();
     const manifest = seed('37-AC-01', run);
