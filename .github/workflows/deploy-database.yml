@@ -1,14 +1,10 @@
 # priitkustala/ai-news-backend#57 (MD-5): the database deployment of production.
 # Loads config/sources.json into the hosted database with the command staging runs at its build.
-# Runs only from main, only after the owner's Approve in the environment production.
+# Runs only when the owner starts it by hand in Actions on main, never on a push; no agent starts, approves or reruns it.
 # The secret MIGRATION_DATABASE_URL is an environment secret the owner sets, never in a file.
 name: deploy database
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - config/sources.json
   workflow_dispatch:
 
 permissions:
