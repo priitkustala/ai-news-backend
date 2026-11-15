@@ -34,6 +34,53 @@ function jobEnv() {
 
 const named = (step) => step[0].replace(/^      - name: /, '');
 
+// priitkustala/ai-news-backend#69 (PG-2): one run at a time, the trigger unchanged, and the session check
+// between the step connection check (before) and the step ingest, in every run, dry or not.
+test('the workflow runs one at a time: a top-level concurrency block between permissions and jobs', () => {
+  const at = lines.indexOf('concurrency:');
+  assert.ok(at >= 0, 'a top-level concurrency block');
+  assert.deepEqual(lines.slice(at, at + 3), ['concurrency:', '  group: ingest-production', '  cancel-in-progress: false']);
+  assert.ok(at > lines.indexOf('permissions:') && at < lines.indexOf('jobs:'), 'between permissions and jobs');
+});
+
+test('the only trigger is workflow_dispatch with its two inputs', () => {
+  const from = lines.indexOf('on:');
+  const to = lines.indexOf('permissions:');
+  assert.ok(from >= 0 && to > from, 'on: comes before permissions:');
+  assert.deepEqual(lines.slice(from, to).filter((line) => line !== ''), [
+    'on:',
+    '  workflow_dispatch:',
+    '    inputs:',
+    '      run_date:',
+    '        type: string',
+    '        required: false',
+    '        description: the run date YYYY-MM-DD, empty means today in UTC',
+    '      dry_run:',
+    '        type: boolean',
+    '        default: true',
+    '        description: write nothing',
+  ]);
+});
+
+test('a step named session check comes between connection check (before) and ingest', () => {
+  const names = steps().map(named);
+  const at = names.indexOf('session check');
+  assert.ok(at > 0, 'the step session check exists');
+  assert.deepEqual(names.slice(at - 1, at + 2), ['connection check (before)', 'session check', 'ingest']);
+});
+
+test('the session check prints one of two lines, stops the job on DIFFERENT and runs in every run', () => {
+  const step = steps().find((each) => each[0] === '      - name: session check');
+  assert.ok(step, 'the step session check exists');
+  const text = step.join('\n');
+  assert.ok(text.includes('session check: SAME'));
+  assert.ok(text.includes('session check: DIFFERENT'));
+  assert.equal(text.split('console.log').length - 1, 1, 'exactly one console.log');
+  assert.ok(text.includes('pg_backend_pid()'));
+  assert.ok(text.includes('process.exit(1)'));
+  assert.equal(step.some((line) => line.startsWith('        if:')), false, 'no condition: dry or not');
+});
+
 test('a step named digest comes directly after the step named ingest', () => {
   const all = steps();
   const ingest = all.findIndex((step) => step[0] === '      - name: ingest');
