@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic fixture feed for priitkustala/ai-news-backend#55: every title and link is invented. Its one item is a stored
+     item with a stored digest; the feed delivers it earlier than the stored copy at the same weight, with a description of
+     100 characters, so the copy wins and replaces the summary while the digest stays. -->
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed of a kept digest (fixture)</title>
+    <link>https://example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}}-kept synthetic note on an AI lab digest</title><link>https://example.com/ai-news-fixture/{{run}}-kept</link><description>Synthetic fixture text: an invented team revises its AI digest note with a later summary for a feed.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://example.com/ai-news-fixture/{{run}}-kept</guid></item>
+  </channel>
+</rss>

@@ -15,6 +15,7 @@ import { measure } from './measure/measure.js';
 import { drawSample } from './measure/draw.js';
 import { MeasureError, sampleFolder } from './measure/sample.js';
 import { summariesApply, summariesPending } from './summaries.js';
+import { digest } from './digest/digest.js';
 
 const USAGE = `Usage: node dist/cli.js <command> [arguments]
 
@@ -23,6 +24,7 @@ Commands of the job and the local test environment:
   notify <run-date>                 send the run date's one push notification to the owner's subscriptions (YYYY-MM-DD)
   summaries-pending [--limit N]     list the items without a usable summary, newest first (default 30), one JSON line each
   summaries-apply                   store model-written summaries read as JSON lines of id and text on standard input
+  digest                            write a model digest for up to 40 feed items without one (DIGEST_API_KEY; none: skipped)
   seed <fixture-set> <run-marker>   reset the local database to the base seed plus a fixture set
   sign-in <persona>                 development sign-in of a seeded persona (${PERSONAS.join(', ')}); prints its access token
   scan-secrets <path>...            scan a repository, a folder or a file for this stack's seeded secrets
@@ -96,6 +98,12 @@ async function main(argv: string[]): Promise<void> {
       const chunks: Buffer[] = [];
       for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
       print(await summariesApply(Buffer.concat(chunks).toString('utf8'), log));
+      return;
+    }
+    case 'digest': {
+      if (args.length !== 0) throw new UsageError('digest takes no argument.');
+      // done, skipped (no key) and stopped (the model's interface failed) all exit 0.
+      print(await digest(log));
       return;
     }
     case 'seed': {
