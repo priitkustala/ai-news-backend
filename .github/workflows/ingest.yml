@@ -21,6 +21,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ingest-production
+  cancel-in-progress: false
+
 jobs:
   ingest:
     runs-on: ubuntu-24.04
@@ -41,6 +45,9 @@ jobs:
       - name: connection check (before)
         run: |
           node --input-type=module -e "import pg from 'pg'; const client = new pg.Client({ connectionString: process.env.DATABASE_URL }); await client.connect(); const result = await client.query('select current_user as role, (select count(*) from public.ingestion_runs)::integer as ingestion_runs, (select count(*) from public.items)::integer as items'); console.log(JSON.stringify(result.rows[0])); await client.end();"
+      - name: session check
+        run: |
+          node --input-type=module -e "import pg from 'pg'; const a = new pg.Client({ connectionString: process.env.DATABASE_URL }); const b = new pg.Client({ connectionString: process.env.DATABASE_URL }); await a.connect(); await a.query('begin'); const first = (await a.query('select pg_backend_pid() as pid')).rows[0].pid; await a.query('commit'); await b.connect(); await b.query('begin'); await b.query('select 1'); await a.query('begin'); const second = (await a.query('select pg_backend_pid() as pid')).rows[0].pid; await a.query('commit'); await b.query('commit'); await a.end(); await b.end(); const line = first === second ? 'session check: SAME' : 'session check: DIFFERENT'; console.log(line); if (first !== second) process.exit(1);"
       - name: ingest
         run: |
           run_date="${RUN_DATE:-$(date -u +%F)}"
