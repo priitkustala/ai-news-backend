@@ -1,5 +1,5 @@
 // The committed source list config/sources.json (priitkustala/ai-news#108; approved settlement
-// 47 of 2026-11-09): its shape, the six changed or new rows, the one Anthropic mirror row, and
+// 47 of 2026-11-09): its shape, the five changed or new rows still listed, the one Anthropic mirror row, and
 // draw-sample's own parse of it through the built command (a refusal before any fetch, so no
 // feed is requested). Runs after npm run build.
 import { test } from 'node:test';
@@ -37,7 +37,6 @@ const CHANGED = {
   'google-ai-blog': ['https://blog.google/innovation-and-ai/technology/ai/rss/', ['releases', 'research']],
   'nvidia-blog': ['https://blogs.nvidia.com/feed/', ['releases', 'business']],
   'mit-technology-review-ai': ['https://www.technologyreview.com/topic/artificial-intelligence/feed', ['research', 'business']],
-  'import-ai': ['https://importai.substack.com/feed', ['research', 'policy']],
 };
 
 for (const [id, [feedUrl, categories]] of Object.entries(CHANGED)) {
@@ -48,6 +47,14 @@ for (const [id, [feedUrl, categories]] of Object.entries(CHANGED)) {
     assert.deepEqual(row.default_categories, categories);
   });
 }
+
+// priitkustala/ai-news-backend#75 (outcome B): both feeds answer HTTP 403 to the production runner and 200 to the
+// same request from another network (probe of 2026-11-16T15:07Z), so the two rows leave the list.
+test('neither eu-ai-act-newsletter nor import-ai is a row (priitkustala/ai-news-backend#75)', () => {
+  const ids = read().sources.map((s) => s.id);
+  assert.ok(!ids.includes('eu-ai-act-newsletter'), 'eu-ai-act-newsletter is not a row');
+  assert.ok(!ids.includes('import-ai'), 'import-ai is not a row');
+});
 
 test('exactly one anthropic-news-mirror row', () => {
   assert.equal(read().sources.filter((s) => s.id === 'anthropic-news-mirror').length, 1);
