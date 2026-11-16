@@ -1,5 +1,5 @@
-// The job's published interface: the `ingest` command with a run date and `--dry-run`
-// (Locked, Architecture), the seed of the local test environment (Locked, Local test
+// The job's published interface: the `ingest` command with a run date, `--dry-run` and
+// `--runner` (Locked, Architecture; priitkustala/ai-news-backend#86), the seed of the local test environment (Locked, Local test
 // environment), the measurement script (AC-25; its --sample-dir option and the draw of a
 // sample folder, priitkustala/ai-news#75) and the repository scan (AC-20).
 // Output shapes: tests/README-testids.md, Named commands and outputs.
@@ -23,8 +23,9 @@ export type RunReport = {
 
 export type IngestResult = CommandResult & { report: RunReport | undefined; log: string };
 
-export function ingest(runDate: string, options: { dryRun?: boolean } = {}): IngestResult {
-  const args = ['ingest', runDate, ...(options.dryRun ? ['--dry-run'] : [])];
+// runner (priitkustala/ai-news-backend#86): passes --runner with its value; absent, the command's default (cloud).
+export function ingest(runDate: string, options: { dryRun?: boolean; runner?: string } = {}): IngestResult {
+  const args = ['ingest', runDate, ...(options.dryRun ? ['--dry-run'] : []), ...(options.runner === undefined ? [] : ['--runner', options.runner])];
   const result = runBackend(args);
   return {
     ...result,

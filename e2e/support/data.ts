@@ -5,10 +5,12 @@
 // read. Header names, status codes and the Prefer header follow Supabase's Data API
 // (PostgREST) (UNVERIFIED; check: 40c and 40d pass against the stack #40 builds, and the
 // PostgREST error and preference pages are read at #40's Brief).
+import fs from 'node:fs';
+import path from 'node:path';
 import type { APIRequestContext } from '@playwright/test';
 import { expect } from '@playwright/test';
 import { lastJsonObject, runBackend } from './backend';
-import { requireEnv } from './env';
+import { repositoryRoot, requireEnv } from './env';
 
 export type Persona = 'owner' | 'second-user';
 export type Row = Record<string, unknown>;
@@ -128,4 +130,32 @@ export function titleOf(row: Row): string {
 // created_at, title, link, summary as shown; one row per item), under the owner's session.
 export function bookmarkFor(item: Row): Row {
   return { item_id: item.id, title: item.title, link: item.canonical_url, summary: item.summary ?? null };
+}
+
+// The committed source list on the fixture feed server (priitkustala/ai-news-backend#86): the box
+// cannot reach the hosts of config/sources.json, so a scenario loads a copy of it with seed-sources
+// that keeps every id and runner mark and points each entry, as a feed, at the canned feed ok.xml
+// carrying the run marker and the source id (distinct items per source), or, for an id in
+// `failing`, at an address answering HTTP 500. Returns the file and the list's entries.
+export const LAPTOP_SOURCE_IDS = ['eu-ai-act-newsletter', 'import-ai'];
+export type ConfigSource = { id: string; runner?: string } & Row;
+
+export function committedSources(): ConfigSource[] {
+  const file = path.join(repositoryRoot(), 'config', 'sources.json');
+  return (JSON.parse(fs.readFileSync(file, 'utf8')) as { sources: ConfigSource[] }).sources;
+}
+
+export function writeFixtureSources(dir: string, run: string, failing: string[] = []): { file: string; sources: ConfigSource[] } {
+  const origin = new URL(requireEnv('E2E_FIXTURE_FEED_URL', 'a canned feed on the fixture feed server')).origin;
+  const at = new Date().toISOString();
+  const sources = committedSources().map((s) => ({
+    ...s,
+    source_type: 'feed',
+    feed_url: failing.includes(s.id)
+      ? `${origin}/status/500/${s.id}`
+      : `${origin}/feeds/ok.xml?${new URLSearchParams({ run: `${run}-${s.id}`, at })}`,
+  }));
+  const file = path.join(dir, 'sources.json');
+  fs.writeFileSync(file, `${JSON.stringify({ sources }, null, 2)}\n`);
+  return { file, sources };
 }

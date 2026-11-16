@@ -2,7 +2,8 @@
 // per run date to the owner's subscriptions once the run has finished, and none on a rerun.
 // Runs with the job's scoped role. The date is claimed on its ingestion run (notified_at) in
 // one statement before anything is sent, and a failed send is not retried: B-14's invariant is
-// no second notification, so a lost one is preferred to a duplicate.
+// no second notification, so a lost one is preferred to a duplicate. Only the cloud run of the date
+// counts (priitkustala/ai-news-backend#86): a laptop run never notifies.
 //
 // The request is built by web-push's generateRequestDetails (the payload encrypted as aes128gcm,
 // the VAPID signature in the authorization header) and sent with fetch: sendNotification sends
@@ -50,7 +51,7 @@ export async function notify(runDate: string, log: (line: string) => void): Prom
   const report = (status: NotifyStatus, sent = 0, failed: { reason: string }[] = []): NotifyReport => ({ run_date: runDate, status, sent, failed });
   return withClient('DATABASE_URL', async (client) => {
     const run = (await client.query<{ status: string; notified_at: Date | null }>(
-      'select status, notified_at from public.ingestion_runs where run_date = $1',
+      "select status, notified_at from public.ingestion_runs where run_date = $1 and runner = 'cloud'",
       [runDate],
     )).rows[0];
     if (!run || !NOTIFYING_STATUSES.includes(run.status)) return report('no-finished-run');
@@ -67,7 +68,7 @@ export async function notify(runDate: string, log: (line: string) => void): Prom
     };
     // The claim: of two commands for one date, only one gets the row back and sends.
     const claimed = await client.query(
-      'update public.ingestion_runs set notified_at = now() where run_date = $1 and status = any($2) and notified_at is null returning run_date',
+      "update public.ingestion_runs set notified_at = now() where run_date = $1 and runner = 'cloud' and status = any($2) and notified_at is null returning run_date",
       [runDate, NOTIFYING_STATUSES],
     );
     if (claimed.rows.length === 0) return report('already-notified');

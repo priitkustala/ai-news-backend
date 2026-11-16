@@ -8,7 +8,7 @@ import { applyMigrations, checkMigration, migrate } from './migrate.js';
 import { seed } from './seed.js';
 import { seedSources } from './seed-sources.js';
 import { isPersona, PERSONAS, signIn } from './auth.js';
-import { ingest, parseRunDate } from './ingest/ingest.js';
+import { ingest, isRunner, parseRunDate, RUNNERS, type Runner } from './ingest/ingest.js';
 import { scanSecrets } from './scan/scan.js';
 import { notify } from './notify/notify.js';
 import { measure } from './measure/measure.js';
@@ -20,7 +20,9 @@ import { digest } from './digest/digest.js';
 const USAGE = `Usage: node dist/cli.js <command> [arguments]
 
 Commands of the job and the local test environment:
-  ingest <run-date> [--dry-run]     run the ingestion job for a date (YYYY-MM-DD); --dry-run writes nothing
+  ingest <run-date> [--dry-run] [--runner cloud|laptop]
+                                    run the ingestion job for a date (YYYY-MM-DD) on the sources of its runner: cloud
+                                    (the scheduled job, the default) or laptop; --dry-run writes nothing
   notify <run-date>                 send the run date's one push notification to the owner's subscriptions (YYYY-MM-DD)
   summaries-pending [--limit N]     list the items without a usable summary, newest first (default 30), one JSON line each
   summaries-apply                   store model-written summaries read as JSON lines of id and text on standard input
@@ -67,8 +69,18 @@ async function main(argv: string[]): Promise<void> {
     case 'ingest': {
       const dryRun = args.includes('--dry-run');
       const rest = args.filter((arg) => arg !== '--dry-run');
-      if (rest.length !== 1) throw new UsageError('ingest takes one run date and the optional --dry-run flag.');
-      const report = await ingest(parseRunDate(rest[0]), dryRun, log);
+      let runner: Runner = 'cloud';
+      const at = rest.indexOf('--runner');
+      if (at >= 0) {
+        const value = rest[at + 1];
+        if (!isRunner(value) || rest.indexOf('--runner', at + 1) >= 0) {
+          throw new UsageError(`ingest takes --runner once, followed by ${RUNNERS.join(' or ')}.`);
+        }
+        runner = value;
+        rest.splice(at, 2);
+      }
+      if (rest.length !== 1) throw new UsageError('ingest takes one run date, the optional --dry-run flag and the optional --runner cloud|laptop.');
+      const report = await ingest(parseRunDate(rest[0]), dryRun, log, runner);
       print(report);
       // A run that could not finish its own writes is a failure of the job, not of a source.
       if (report.error) process.exitCode = 1;

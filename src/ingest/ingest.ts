@@ -1,5 +1,8 @@
-// `ingest <run-date> [--dry-run]`: the job's command (priitkustala/ai-news-backend#1, S-02;
-// Locked, Architecture, B-01 and B-02). One run per run date: a start on a date whose run
+// `ingest <run-date> [--dry-run] [--runner cloud|laptop]`: the job's command (priitkustala/ai-news-backend#1, S-02;
+// Locked, Architecture, B-01 and B-02). A run names its runner (priitkustala/ai-news-backend#86): the
+// scheduled cloud job (cloud, the default) or the owner's laptop (laptop); a run fetches only the
+// sources of its runner, and everything below is per run date and runner (the run row, the lock,
+// the takeover, the abandoned runs). One run per run date and runner: a start on a date whose run
 // completed returns that run without fetching; a start on a date whose run did not complete
 // (running, partial, failed or abandoned) takes the same run over and completes it. A run of
 // an earlier date left `running` by an interrupted job is marked `abandoned`. Every enabled
@@ -17,7 +20,7 @@
 // daily cap marked (S-04,
 // src/process/apply.ts), so the `feed` view shows one representative per cluster by score.
 // With --dry-run it fetches and processes and writes nothing. A session advisory lock per run
-// date keeps two starts of the same date from running at once. If the run's own
+// date and runner keeps two starts of the same date and runner from running at once. If the run's own
 // writes fail after it started, they are rolled back and the run is recorded `failed` with a
 // safe error (counts.run_error; the command exits 1); if even that record is refused, the
 // command says so and exits 1 without a run report. A read that fails after the run's writes
@@ -86,8 +89,14 @@ type RunItem = ItemToStore & { reddit?: RedditFields };
 type RunCounts = { fetched?: number; processed?: number; rejected?: RunReport['rejected'] } & Record<string, unknown>;
 type RunRow = { id: string; status: string; counts: RunCounts; source_errors: RunReport['source_errors'] };
 
-// The advisory lock space of the job: (LOCK_CLASS, days since 1970-01-01 of the run date).
-const LOCK_CLASS = 20_502;
+// The runners of a run and of a source (db/migrations/0018_source_runner.sql); absent means cloud.
+export const RUNNERS = ['cloud', 'laptop'] as const;
+export type Runner = (typeof RUNNERS)[number];
+export const isRunner = (value: unknown): value is Runner => RUNNERS.includes(value as Runner);
+
+// The advisory lock space of the job: (the runner's class, days since 1970-01-01 of the run date).
+// A cloud run keeps the class of the time before runners; a laptop run has its own.
+const LOCK_CLASS: Record<Runner, number> = { cloud: 20_502, laptop: 20_503 };
 const LOCK_KEY = "($1::date - date '1970-01-01')";
 
 export function parseRunDate(value: string | undefined): string {
@@ -118,8 +127,10 @@ async function reportedItemCount(client: Client, runId: string, runDate: string,
   }
 }
 
-async function runOf(client: Client, runDate: string): Promise<RunRow | undefined> {
-  return (await client.query<RunRow>('select id, status, counts, source_errors from public.ingestion_runs where run_date = $1', [runDate])).rows[0];
+async function runOf(client: Client, runDate: string, runner: Runner): Promise<RunRow | undefined> {
+  return (await client.query<RunRow>(
+    'select id, status, counts, source_errors from public.ingestion_runs where run_date = $1 and runner = $2', [runDate, runner],
+  )).rows[0];
 }
 
 // Collects and processes every enabled source; writes nothing (it reads the stored items'
@@ -243,17 +254,19 @@ function countsOf(
   };
 }
 
-export async function ingest(runDate: string, dryRun: boolean, log: (line: string) => void): Promise<RunReport> {
+export async function ingest(runDate: string, dryRun: boolean, log: (line: string) => void, runner: Runner = 'cloud'): Promise<RunReport> {
+  const lockClass = LOCK_CLASS[runner];
   return withClient('DATABASE_URL', async (client) => {
     const sources = (await client.query<Source>(
-      'select id, feed_url, source_type, display_policy, default_categories, source_weight::float8 as source_weight from app_private.sources where enabled order by id',
+      `select id, feed_url, source_type, display_policy, default_categories, source_weight::float8 as source_weight
+         from app_private.sources where enabled and runner = $1 order by id`, [runner],
     )).rows;
-    log(`ingest: run date ${runDate}, ${sources.length} enabled sources${dryRun ? ', dry run' : ''}`);
+    log(`ingest: run date ${runDate}, runner ${runner}, ${sources.length} enabled sources${dryRun ? ', dry run' : ''}`);
     const credentials = sources.some((s) => s.source_type === 'reddit') ? await redditCredentials(client) : null;
     const reddit = credentials ? new RedditSession(credentials) : null;
 
     if (dryRun) {
-      const existing = await runOf(client, runDate);
+      const existing = await runOf(client, runDate, runner);
       const work = await collectAndProcess(client, sources, reddit, log);
       const known = (await client.query<{ canonical_url: string }>(
         'select canonical_url from public.items where canonical_url = any($1::text[])', [work.items.map((i) => i.canonical_url)],
@@ -269,9 +282,9 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
       };
     }
 
-    const locked = (await client.query<{ ok: boolean }>(`select pg_try_advisory_lock(${LOCK_CLASS}, ${LOCK_KEY}) as ok`, [runDate])).rows[0].ok;
+    const locked = (await client.query<{ ok: boolean }>(`select pg_try_advisory_lock(${lockClass}, ${LOCK_KEY}) as ok`, [runDate])).rows[0].ok;
     if (!locked) {
-      const current = await runOf(client, runDate);
+      const current = await runOf(client, runDate, runner);
       log(`ingest: another start of run date ${runDate} is running; this start does nothing`);
       return {
         run_id: current?.id ?? null, run_date: runDate, status: current?.status ?? 'running', dry_run: false,
@@ -280,7 +293,7 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
       };
     }
     try {
-      const existing = await runOf(client, runDate);
+      const existing = await runOf(client, runDate, runner);
       if (existing?.status === 'completed') {
         const itemCount = await storedItemCount(client);
         log(`ingest: run ${existing.id} of ${runDate} already completed; nothing fetched, stored items ${itemCount}`);
@@ -292,17 +305,17 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
       }
 
       const runId = await inTransaction(client, async () => {
-        // A run of another date still `running` whose job holds no lock was interrupted.
+        // A run of the same runner and another date still `running` whose job holds no lock was interrupted.
         const abandoned = await client.query<{ run_date: string }>(
           `update public.ingestion_runs set status = 'abandoned', ended_at = now()
-            where status = 'running' and run_date <> $1::date
-              and pg_try_advisory_xact_lock(${LOCK_CLASS}, (run_date - date '1970-01-01'))
-          returning run_date`, [runDate]);
+            where status = 'running' and run_date <> $1::date and runner = $2
+              and pg_try_advisory_xact_lock(${lockClass}, (run_date - date '1970-01-01'))
+          returning run_date`, [runDate, runner]);
         if (abandoned.rowCount) log(`ingest: marked ${abandoned.rowCount} interrupted run(s) of earlier dates abandoned`);
         return (await client.query<{ id: string }>(
-          `insert into public.ingestion_runs (run_date, status) values ($1, 'running')
-           on conflict (run_date) do update set status = 'running', ended_at = null
-           returning id`, [runDate])).rows[0].id;
+          `insert into public.ingestion_runs (run_date, runner, status) values ($1, $2, 'running')
+           on conflict (run_date, runner) do update set status = 'running', ended_at = null
+           returning id`, [runDate, runner])).rows[0].id;
       });
       log(existing ? `ingest: run ${runId} of ${runDate} was ${existing.status}; taking it over` : `ingest: run ${runId} of ${runDate} started`);
 
@@ -421,7 +434,7 @@ export async function ingest(runDate: string, dryRun: boolean, log: (line: strin
       };
     } finally {
       // Closing the connection releases the lock as well, so a broken connection is not an error here.
-      await client.query(`select pg_advisory_unlock(${LOCK_CLASS}, ${LOCK_KEY})`, [runDate]).catch(() => undefined);
+      await client.query(`select pg_advisory_unlock(${lockClass}, ${LOCK_KEY})`, [runDate]).catch(() => undefined);
     }
   });
 }

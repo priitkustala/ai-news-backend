@@ -1,5 +1,6 @@
 // The committed source list config/sources.json (priitkustala/ai-news#108; approved settlement
-// 47 of 2026-11-09): its shape, the five changed or new rows still listed, the one Anthropic mirror row, and
+// 47 of 2026-11-09): its shape, the six changed or new rows, the two laptop rows (priitkustala/ai-news-backend#86),
+// the one Anthropic mirror row, and
 // draw-sample's own parse of it through the built command (a refusal before any fetch, so no
 // feed is requested). Runs after npm run build.
 import { test } from 'node:test';
@@ -37,6 +38,7 @@ const CHANGED = {
   'google-ai-blog': ['https://blog.google/innovation-and-ai/technology/ai/rss/', ['releases', 'research']],
   'nvidia-blog': ['https://blogs.nvidia.com/feed/', ['releases', 'business']],
   'mit-technology-review-ai': ['https://www.technologyreview.com/topic/artificial-intelligence/feed', ['research', 'business']],
+  'import-ai': ['https://importai.substack.com/feed', ['research', 'policy']],
 };
 
 for (const [id, [feedUrl, categories]] of Object.entries(CHANGED)) {
@@ -48,12 +50,30 @@ for (const [id, [feedUrl, categories]] of Object.entries(CHANGED)) {
   });
 }
 
-// priitkustala/ai-news-backend#75 (outcome B): both feeds answer HTTP 403 to the production runner and 200 to the
-// same request from another network (probe of 2026-11-16T15:07Z), so the two rows leave the list.
-test('neither eu-ai-act-newsletter nor import-ai is a row (priitkustala/ai-news-backend#75)', () => {
-  const ids = read().sources.map((s) => s.id);
-  assert.ok(!ids.includes('eu-ai-act-newsletter'), 'eu-ai-act-newsletter is not a row');
-  assert.ok(!ids.includes('import-ai'), 'import-ai is not a row');
+// priitkustala/ai-news-backend#86: both feeds answer HTTP 403 to the production runner (#75), so their rows come
+// back marked for the laptop runner; no other row carries a runner (absent means cloud).
+const LAPTOP = ['eu-ai-act-newsletter', 'import-ai'];
+
+test('eu-ai-act-newsletter and import-ai are rows marked laptop, the other 14 carry no runner (priitkustala/ai-news-backend#86)', () => {
+  const { sources } = read();
+  assert.equal(sources.length, 16);
+  for (const id of LAPTOP) assert.equal(sources.find((s) => s.id === id)?.runner, 'laptop', `${id} is a row marked laptop`);
+  const others = sources.filter((s) => !LAPTOP.includes(s.id));
+  assert.equal(others.length, 14);
+  for (const s of others) assert.ok(!('runner' in s), `${s.id} carries no runner`);
+});
+
+test('the row eu-ai-act-newsletter is as before priitkustala/ai-news-backend#75, plus its runner', () => {
+  assert.deepEqual(read().sources.find((s) => s.id === 'eu-ai-act-newsletter'), {
+    id: 'eu-ai-act-newsletter',
+    name: 'EU AI Act Newsletter',
+    feed_url: 'https://artificialintelligenceact.substack.com/feed',
+    source_type: 'feed',
+    default_categories: ['policy'],
+    display_policy: 'feed-summary',
+    source_weight: 1,
+    runner: 'laptop',
+  });
 });
 
 test('exactly one anthropic-news-mirror row', () => {
