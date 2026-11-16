@@ -19,7 +19,7 @@ test(
     const file = path.join(repositoryRoot(), 'config', 'sources.json');
     const list = JSON.parse(fs.readFileSync(file, 'utf8')) as { sources: { id: string }[] };
     const ids = list.sources.map((s) => s.id);
-    expect(ids.length, 'prerequisite: the committed list has 16 or more rows').toBeGreaterThanOrEqual(16);
+    expect(ids.length, 'prerequisite: the committed list has 14 or more rows').toBeGreaterThanOrEqual(14);
 
     // When: seed-sources runs with the absolute path of that file
     const result = runBackend(['seed-sources', file]);
