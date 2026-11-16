@@ -43,7 +43,9 @@ test('the workflow runs one at a time: a top-level concurrency block between per
   assert.ok(at > lines.indexOf('permissions:') && at < lines.indexOf('jobs:'), 'between permissions and jobs');
 });
 
-test('the only trigger is workflow_dispatch with its two inputs', () => {
+// priitkustala/ai-news-backend#73 (DR-1): the workflow ingest starts by hand and once a day by itself at 04:17 UTC,
+// the input dry_run still defaults to true, and the workflow is named ingest.
+test('the triggers are workflow_dispatch with its two inputs and one daily schedule', () => {
   const from = lines.indexOf('on:');
   const to = lines.indexOf('permissions:');
   assert.ok(from >= 0 && to > from, 'on: comes before permissions:');
@@ -59,7 +61,20 @@ test('the only trigger is workflow_dispatch with its two inputs', () => {
     '        type: boolean',
     '        default: true',
     '        description: write nothing',
+    '  schedule:',
+    '    - cron: \'17 4 * * *\'',
   ]);
+  assert.equal(lines.filter((line) => line.trimStart().startsWith('- cron:')).length, 1, 'exactly one schedule entry');
+});
+
+test('the input dry_run still defaults to true', () => {
+  const at = lines.indexOf('      dry_run:');
+  assert.ok(at >= 0, 'the input dry_run exists');
+  assert.deepEqual(lines.slice(at, at + 3), ['      dry_run:', '        type: boolean', '        default: true']);
+});
+
+test('the workflow is named ingest', () => {
+  assert.deepEqual(lines.filter((line) => line.startsWith('name:')), ['name: ingest']);
 });
 
 test('a step named session check comes between connection check (before) and ingest', () => {
@@ -92,7 +107,7 @@ test('the digest step runs the command only with the dry run off, its key from t
   const digest = steps().find((step) => step[0] === '      - name: digest');
   assert.deepEqual(digest, [
     '      - name: digest',
-    '        if: ${{ inputs.dry_run == false }}',
+    '        if: ${{ github.event_name == \'schedule\' || inputs.dry_run == false }}',
     '        env:',
     '          DIGEST_API_KEY: ${{ secrets.DIGEST_API_KEY }}',
     '        run: node dist/cli.js digest',
