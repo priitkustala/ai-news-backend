@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { UsageError } from '../env.js';
 import { isArxivSource } from '../collect/collect.js';
+import { isRunner, RUNNERS, type Runner } from '../ingest/ingest.js';
 import { fetchFeed, SourceFailure } from '../collect/fetch.js';
 import { parseFeedItems, type FeedEntry } from '../collect/parse.js';
 import { canonicalUrl } from '../process/dedupe.js';
@@ -39,6 +40,8 @@ type DrawSource = {
   default_categories: string[];
   display_policy: string;
   source_weight: number;
+  // The runner that fetches the source (priitkustala/ai-news-backend#86); absent in the file means cloud.
+  runner: Runner;
 };
 
 export type Dropped = { no_link: number; no_time: number; outside_window: number; repeated: number; over_cap: number; oversized: number };
@@ -74,6 +77,7 @@ export function readSources(file: string): { input: Buffer; sources: DrawSource[
     const s = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
     if (typeof s.id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(s.id)) throw new UsageError(`--sources <file>: source ${index + 1} needs an id of lower-case letters, digits and hyphens`);
     if (typeof s.feed_url !== 'string' || s.feed_url === '') throw new UsageError(`--sources <file>: source ${s.id} has no feed_url`);
+    if (s.runner !== undefined && !isRunner(s.runner)) throw new UsageError(`--sources <file>: source ${s.id} has a runner other than ${RUNNERS.join(' or ')}`);
     return {
       id: s.id,
       name: typeof s.name === 'string' ? s.name : s.id,
@@ -82,6 +86,7 @@ export function readSources(file: string): { input: Buffer; sources: DrawSource[
       default_categories: Array.isArray(s.default_categories) ? s.default_categories.map(String) : [],
       display_policy: typeof s.display_policy === 'string' ? s.display_policy : 'title-link',
       source_weight: typeof s.source_weight === 'number' ? s.source_weight : 1,
+      runner: s.runner === undefined ? 'cloud' : (s.runner as Runner),
     };
   });
   if (new Set(sources.map((s) => s.id)).size !== sources.length) throw new UsageError('--sources <file>: a source id appears twice');

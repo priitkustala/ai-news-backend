@@ -13,11 +13,13 @@
 export const AI_SOURCE_IDS: readonly string[] = [
   'anthropic-news-mirror',
   'deepmind-blog',
+  'eu-ai-act-newsletter',
   'federal-register-ai',
   'github-blog-ai',
   'google-ai-blog',
   'google-research-blog',
   'huggingface-blog',
+  'import-ai',
   'mit-news-ai',
   'mit-technology-review-ai',
   'openai-news',

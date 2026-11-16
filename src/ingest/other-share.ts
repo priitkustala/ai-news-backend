@@ -35,9 +35,10 @@ export async function storeOtherShare(client: Client, runId: string, windowEnd: 
   );
 }
 
-// The run the categories view reads the share of: the latest completed or partial run.
+// The run the categories view reads the share of: the latest completed or partial cloud run (the app
+// reads cloud runs only, priitkustala/ai-news-backend#86).
 export async function latestRunId(client: Client): Promise<string | undefined> {
   return (await client.query<{ id: string }>(
-    "select id from public.ingestion_runs where status in ('completed', 'partial') order by run_date desc limit 1",
+    "select id from public.ingestion_runs where status in ('completed', 'partial') and runner = 'cloud' order by run_date desc limit 1",
   )).rows[0]?.id;
 }
