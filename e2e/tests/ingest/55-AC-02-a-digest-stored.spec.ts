@@ -14,7 +14,7 @@ import { expectRows, readRelation, signIn } from '../../support/data';
 async function stubReply(request: APIRequestContext, fixtures: string, mode: string, key: string): Promise<string> {
   const response = await request.post(`${fixtures}/model/${mode}/${key}/chat/completions`, {
     headers: { Authorization: 'Bearer stub-key', 'Content-Type': 'application/json' },
-    data: { model: 'gpt-5-nano', messages: [] },
+    data: { model: 'gpt-6-luna', messages: [] },
   });
   expect(response.status(), 'prerequisite: the stand-in answers').toBe(200);
   const content = ((await response.json()) as { choices?: { message?: { content?: unknown } }[] }).choices?.[0]?.message?.content;

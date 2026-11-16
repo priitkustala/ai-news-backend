@@ -14,7 +14,7 @@ export const DIGEST_ITEMS_PER_RUN = 40;
 export const DIGEST_MAX_ATTEMPTS = 3;
 export const PAGE_TIMEOUT_MS = 10_000;
 export const MODEL_TIMEOUT_MS = 60_000;
-export const DIGEST_MODEL = 'gpt-5-nano';
+export const DIGEST_MODEL = 'gpt-6-luna';
 export const DEFAULT_API_BASE = 'https://api.openai.com/v1';
 const MAX_COMPLETION_TOKENS = 2000;
 
@@ -109,7 +109,7 @@ async function askModel(key: string, item: PendingItem, text: string): Promise<s
           { role: 'user', content: user },
         ],
         max_completion_tokens: MAX_COMPLETION_TOKENS,
-        reasoning_effort: 'minimal',
+        reasoning_effort: 'none',
       }),
       signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
     });

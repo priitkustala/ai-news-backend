@@ -159,7 +159,7 @@ async function modelCompletion(request, response, mode, key) {
   return send(response, 200, 'application/json', JSON.stringify({
     id: `stub-${key}-${n}`,
     object: 'chat.completion',
-    model: 'gpt-5-nano',
+    model: 'gpt-6-luna',
     choices: [{ index: 0, message: { role: 'assistant', content: MODEL_REPLIES[mode] }, finish_reason: 'stop' }],
     usage: { prompt_tokens: 1200, completion_tokens: 210, total_tokens: 1410 },
   }));
