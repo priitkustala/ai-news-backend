@@ -40,6 +40,7 @@ jobs:
         if: env.DRY_RUN != 'true'
         env:
           DUMP_PUBLIC_KEY: ${{ vars.DUMP_PUBLIC_KEY }}
+        shell: bash
         run: |
           test -n "$DUMP_PUBLIC_KEY" || { echo 'dump: the repository variable DUMP_PUBLIC_KEY is empty'; exit 1; }
           major=$(( $(psql "$MIGRATION_DATABASE_URL" -XAtc 'show server_version_num') / 10000 ))
@@ -62,6 +63,7 @@ jobs:
         if: env.DRY_RUN != 'true'
         run: node dist/cli.js apply-migrations
       - name: after
+        shell: bash
         run: |
           node dist/cli.js apply-migrations --dry-run | tee after.json
           node -e 'const r = JSON.parse(require("fs").readFileSync(0, "utf8")); if (r.owner_only_findings !== 0 || (process.env.DRY_RUN !== "true" && r.pending.length !== 0)) { console.log("after: pending " + r.pending.length + ", owner-only findings " + r.owner_only_findings); process.exit(1); }' < after.json

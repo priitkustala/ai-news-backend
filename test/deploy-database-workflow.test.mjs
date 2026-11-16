@@ -104,3 +104,57 @@ test('AGENTS.md carries the apply-migrations row and the rollback rule', () => {
   const end = agents.findIndex((line, i) => i > start && line.startsWith('## '));
   assert.ok(agents.slice(start, end).some((line) => line.includes('never by an agent')));
 });
+
+// The lines of a step's run block: the value after `run:`, or the lines of a `run: |` block without their indent.
+const runBlock = (step) => {
+  const at = step.findIndex((line) => /^      [- ] run: /.test(line));
+  if (at < 0) return [];
+  const value = step[at].replace(/^      [- ] run: /, '');
+  return value === '|' ? step.slice(at + 1).map((line) => line.replace(/^ {10}/, '')) : [value];
+};
+const explicitBash = '        shell: bash';
+
+test('dump and after run under explicit bash, as does every step with a pipe in its run block', () => {
+  for (const name of ['dump', 'after']) assert.ok(named(name).includes(explicitBash), `${name} carries shell: bash`);
+  for (const step of steps()) {
+    if (runBlock(step).some((line) => line.includes('|'))) assert.ok(step.includes(explicitBash), `${step[0].trim()} has a pipe and carries shell: bash`);
+  }
+});
+
+test('a failed pg_dump fails the step dump even when gpg succeeds (offline, stubs only)', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const os = await import('node:os');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deploy-dump-'));
+  try {
+    const bin = path.join(tmp, 'bin');
+    const stub = (file, body) => {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+    };
+    stub(path.join(bin, 'psql'), 'echo 170004');
+    stub(path.join(bin, 'sudo'), 'exit 0');
+    stub(path.join(bin, 'gpg'), 'out=\nwhile [ $# -gt 0 ]; do if [ "$1" = --output ]; then out=$2; fi; shift; done\ncat > "$out"');
+    // The block calls pg_dump by its full path; only the literal prefix /usr/lib/postgresql is replaced, by the temporary folder.
+    const pg = path.join(tmp, 'postgresql');
+    stub(path.join(pg, '17', 'bin', 'pg_dump'), 'if [ "$1" = --version ]; then echo "pg_dump (PostgreSQL) 17.4"; exit 0; fi\necho "some dump bytes"\nexit "$PG_DUMP_EXIT"');
+    const block = runBlock(named('dump')).join('\n').split('/usr/lib/postgresql').join(pg);
+    const script = path.join(tmp, 'dump.sh');
+    fs.writeFileSync(script, `${block}\n`);
+    // GitHub Actions runs an explicit `shell: bash` as `bash --noprofile --norc -eo pipefail {0}`, a step with no shell as `bash -e {0}`.
+    const actions = named('dump').includes(explicitBash) ? ['--noprofile', '--norc', '-eo', 'pipefail'] : ['-e'];
+    const run = (flags, exit) => {
+      const output = path.join(tmp, 'database-dump-4242.gpg');
+      fs.rmSync(output, { force: true });
+      const env = { PATH: `${bin}:${process.env.PATH}`, HOME: tmp, DUMP_PUBLIC_KEY: 'test-key', [db]: 'test-database', GITHUB_RUN_ID: '4242', PG_DUMP_EXIT: String(exit) };
+      const result = spawnSync('bash', [...flags, script], { cwd: tmp, env, encoding: 'utf8' });
+      return { status: result.status, written: fs.existsSync(output) };
+    };
+    const ok = run(actions, 0);
+    assert.equal(ok.status, 0, 'a good dump passes');
+    assert.ok(ok.written, 'the encrypted file is written');
+    assert.notEqual(run(actions, 1).status, 0, 'a failed pg_dump fails the step');
+    assert.equal(run(['-e'], 1).status, 0, 'without pipefail the failed pg_dump is masked by gpg');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
