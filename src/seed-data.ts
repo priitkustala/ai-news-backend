@@ -497,11 +497,13 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   '55-AC-04': (ctx) => digestSet(ctx, ['blocked', 'missing', 'slow', 'short']),
   '55-AC-05': (ctx) => digestSet(ctx, ['long']),
   '55-AC-06': (ctx) => digestSet(ctx, ['long', 'long'], { attempts: { 2: 3 } }),
-  '55-AC-07': (ctx) => digestSet(ctx, Array.from({ length: 45 }, () => 'big')),
+  '55-AC-07': (ctx) => digestSet(ctx, Array.from({ length: 105 }, () => 'big')),
   '55-AC-08': (ctx) => keptDigest(ctx),
   '55-AC-09': (ctx) => digestSet(ctx, ['marker']),
   '55-AC-10': (ctx) => digestSet(ctx, ['long', 'long'], { nullSummary: [1] }),
   '55-AC-12': (ctx) => digestSet(ctx, ['long', 'long', 'long']),
+  // priitkustala/ai-news-backend#88 AC-8: one pending story of a reddit source, whose page is never read.
+  '88-AC-08': (ctx) => digestSet(ctx, ['long'], { reddit: true }),
   digests: (ctx) => storedDigests(ctx),
 
   // ai-news-frontend rows.
@@ -782,8 +784,9 @@ function storedSummaries(ctx: SeedContext): Extra {
 // /digest-pages/<kind>/<run>-<n>.html of the fixture server (n its position from 1), titled
 // <run>-<n> synthetic note on an AI <word> (each matches the AI keyword), in Releases, published n
 // minutes ago (the first is the newest), with an invented feed summary. `options` sets the summary of
-// the positions in nullSummary to null and the stored attempts of the positions in attempts. Only the
-// set's own items stay: the base seed's items link to real hosts, and no test reads a real page.
+// the positions in nullSummary to null and the stored attempts of the positions in attempts; with
+// reddit, the items' source is the reddit source r/artificial instead (priitkustala/ai-news-backend#88).
+// Only the set's own items stay: the base seed's items link to real hosts, and no test reads a real page.
 const MINUTE = 60 * 1000;
 const DIGEST_WORDS = [
   'chip roadmap', 'tutor', 'weather model', 'robot arm', 'compiler', 'translator', 'dataset', 'benchmark', 'camera',
@@ -793,10 +796,12 @@ const DIGEST_WORDS = [
   'text checker', 'lab notebook', 'data cleaner', 'grid planner', 'flight study', 'shop assistant', 'museum guide',
   'tax helper', 'rail study', 'water model', 'school planner', 'sports study', 'film editor', 'stock counter',
 ];
-type DigestOptions = { nullSummary?: number[]; attempts?: Record<number, number> };
+type DigestOptions = { nullSummary?: number[]; attempts?: Record<number, number>; reddit?: boolean };
 
 function digestSet(ctx: SeedContext, kinds: string[], options: DigestOptions = {}): Extra {
-  const digestSource = source('fixture-digest', 'Fixture digest source', fixtureFeed(ctx, 'ok.xml'), { source_weight: 1 });
+  const digestSource = options.reddit
+    ? redditSource(ctx, 'artificial')
+    : source('fixture-digest', 'Fixture digest source', fixtureFeed(ctx, 'ok.xml'), { source_weight: 1 });
   const items = kinds.map((kind, index): ItemRow => {
     const n = index + 1;
     const word = DIGEST_WORDS[index % DIGEST_WORDS.length];

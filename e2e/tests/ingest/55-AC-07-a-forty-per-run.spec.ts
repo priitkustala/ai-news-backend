@@ -1,8 +1,9 @@
 // 55-AC-07a (scenario, @surface-job, project api): priitkustala/ai-news-backend#55, criterion AC-7.
-// One run sends at most 40 items, newest first, each with at most 12000 characters of article text.
-// Given set 55-AC-07 (45 pending items, published 1 to 45 minutes ago, each on a synthetic article page
+// Changed specification: priitkustala/ai-news-backend#88 (DA-1), the owner decisions of 2026-11-16 (workspace Decisions rows 769 and 775).
+// One run sends at most 100 items, newest first, each with at most 12000 characters of article text (#88 AC-5).
+// Given set 55-AC-07 (105 pending items, published 1 to 105 minutes ago, each on a synthetic article page
 // with over 12000 characters of text) and the stand-in model in mode valid, when the job runs digest,
-// then pending is 40, the stand-in recorded 40 calls whose titles are the 40 newest items' in order,
+// then pending is 100, the stand-in recorded 100 calls whose titles are the 100 newest items' in order,
 // each call's article_text has at most 12000 characters, and 5 items stay without a digest.
 import { test, expect } from '@playwright/test';
 import { requireEnv, runMarker } from '../../support/env';
@@ -23,29 +24,29 @@ function paragraphText(html: string): string {
 }
 
 test(
-  '55-AC-07a: digest sends at most 40 items, newest first, with at most 12000 characters each',
-  { tag: ['@journey-ingest', '@surface-job', '@story-55'] },
+  '55-AC-07a: digest sends at most 100 items, newest first, with at most 12000 characters each',
+  { tag: ['@journey-ingest', '@surface-job', '@story-55', '@story-88'] },
   async ({ request }) => {
-    // A job command of 40 items plus the seed and the reads; two job commands near the 30 second default timed out under load (backend#37, backend#54).
+    // A job command of 100 items plus the seed and the reads; two job commands near the 30 second default timed out under load (backend#37, backend#54).
     test.setTimeout(60_000);
-    // Given: 45 pending items on big article pages
+    // Given: 105 pending items on big article pages
     const run = runMarker();
     const manifest = seed('55-AC-07', run);
     const ids = manifest.ids as string[];
     const links = manifest.links as string[];
-    expect(ids.length, 'prerequisite: the set has 45 items').toBe(45);
+    expect(ids.length, 'prerequisite: the set has 105 items').toBe(105);
     const owner = signIn('owner');
     const fixtures = new URL(requireEnv('E2E_FIXTURE_FEED_URL', 'a canned feed on the fixture feed server')).origin;
     const all = expectRows(await readRelation(request, 'items', owner), 'prerequisite: the owner reads the items');
-    expect(all.length, 'prerequisite: the owner reads the set\'s items').toBe(45);
+    expect(all.length, 'prerequisite: the owner reads the set\'s items').toBe(105);
     for (const row of all) {
       expect(String(row.canonical_url).startsWith(`${fixtures}/`), 'prerequisite: every stored item links to the fixture server').toBe(true);
     }
     const newest = [...all]
       .sort((a, b) => String(b.published_at).localeCompare(String(a.published_at)))
       .map((row) => row.title);
-    expect(newest.slice(0, 40), 'prerequisite: the newest 40 are the set\'s first 40').toEqual(
-      ids.slice(0, 40).map((id) => all.find((row) => row.id === id)?.title),
+    expect(newest.slice(0, 100), 'prerequisite: the newest 100 are the set\'s first 100').toEqual(
+      ids.slice(0, 100).map((id) => all.find((row) => row.id === id)?.title),
     );
     for (const link of links) {
       const page = await request.get(link);
@@ -56,16 +57,16 @@ test(
     // When: the job runs digest
     const result = digest({ DIGEST_API_BASE: `${fixtures}/model/valid/${run}`, DIGEST_API_KEY: 'stub-key' });
 
-    // Then: 40 calls, newest first, each cut at 12000 characters
+    // Then: 100 calls, newest first, each cut at 12000 characters
     expect(result.exitCode, 'digest exits 0').toBe(0);
-    expect(result.report?.pending, 'the run takes 40 items').toBe(40);
+    expect(result.report?.pending, 'the run takes 100 items').toBe(100);
     const record = await request.get(`${fixtures}/model-calls/${run}`);
     expect(record.status(), 'the stand-in answers its record').toBe(200);
     const calls = ((await record.json()) as { calls: Call[] }).calls;
-    expect(calls.length, '40 model calls').toBe(40);
+    expect(calls.length, '100 model calls').toBe(100);
     const inputs = calls.map((call) =>
       JSON.parse(String(call.body.messages?.find((message) => message.role === 'user')?.content)) as { title?: string; article_text?: string });
-    expect(inputs.map((input) => input.title), 'the calls are the 40 newest items, newest first').toEqual(newest.slice(0, 40));
+    expect(inputs.map((input) => input.title), 'the calls are the 100 newest items, newest first').toEqual(newest.slice(0, 100));
     for (const input of inputs) {
       expect(String(input.article_text).length, 'the article text sent is at most 12000 characters').toBeLessThanOrEqual(12000);
     }
