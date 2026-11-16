@@ -10,7 +10,7 @@ The backend services of ai-news: they collect AI-specific news, process it and s
 - Language/runtime: TypeScript on Node 22 (OD-03), compiled by tsc 7.0.2
 - Frameworks: none; pg 8.23.1 for PostgreSQL
 - Deployment: the ingest command runs as a GitHub Actions scheduled workflow of this repository against Supabase (OD-01 B), built at Release and run; nothing is deployed by #40
-- Database deployment: the workflow deploy database (.github/workflows/deploy-database.yml) loads config/sources.json into the hosted database only when the owner starts it by hand in Actions after a merge; a merge alone starts nothing; nothing is written to the hosted database by hand (owner, 2026-11-14).
+- Database deployment: the workflow deploy database (.github/workflows/deploy-database.yml) runs only when the owner starts it by hand in Actions on main; a merge alone starts nothing. Its default dry run tries the pending migrations and rolls them back; with dry_run off it takes an encrypted backup first, then applies the pending migrations with `apply-migrations`, checks that none is left, and loads config/sources.json (priitkustala/ai-news-backend#80). Nothing is written to the hosted database by hand (owner, 2026-11-14).
 - Owning team: ai-news; team context: `ai-news-team-context`
 
 ## Build, Test, Run
@@ -27,6 +27,7 @@ the host, because the box has no container engine. `<compose>` stands for
 | Local keys, once | box | `node dist/cli.js keys` (writes `local.env` and the stack's files into the memory folder `AI_NEWS_SECRETS_DIR`, `/run/ai-news-secrets`, the tmpfs volume `stack-secrets`, never on the host disk; never overwrites; refuses when the variable is unset). The volume empties when the project's last container stops: then keys, step 7 (the first-start row below) and migrate |
 | Start the stack (priitkustala/ai-news#40) | host, Git Bash, this folder (or start the box with `sandbox`, which starts the services with the workload) | `docker compose -p ai-news-backend_devcontainer -f .devcontainer/docker-compose.yml -f .devcontainer/docker-compose.override.yml up -d --wait ai-news-db ai-news-auth ai-news-rest ai-news-api ai-news-feeds ai-news-commands` |
 | Migrate, create the personas and load the base seed | box | `node dist/cli.js migrate` (safe to run again) |
+| Apply only the pending migrations (priitkustala/ai-news-backend#58) | box | `node dist/cli.js apply-migrations [--dry-run]` (no password, persona or seed; each pending file in its own transaction, the first failure stops it; `--dry-run` tries every pending file in one transaction and rolls it all back; prints one JSON line: mode, pending, applied, failed, error_code, files_total, ledger_total, owner_only_findings). Production runs it only in the workflow deploy database (`## Rollback`) |
 | Stack state | host | `<compose> ps` |
 | Stop | host | `<compose> stop` |
 | Reset the database | host, then box | `<compose> rm -s -f -v ai-news-db` and `docker volume rm ai-news-backend_devcontainer_ai-news-db-data`, then the start command and `node dist/cli.js migrate` |
@@ -68,6 +69,13 @@ A frontend instance pairs with one backend instance (see `ai-news-frontend`'s `A
 | Stack state | host, `<folder>` | `<icompose> ps` |
 | Stop | host, `<folder>` | `<icompose> stop` |
 | Remove, after the owner merged the instance's pull request | box, then host | box: `git status --porcelain` prints nothing, and `git rev-parse HEAD` equals the `headRefOid` of `gh pr list --repo priitkustala/ai-news-backend --head <branch> --state merged --json headRefOid`; otherwise stop. Remove a paired frontend instance first. Host, `<folder>`: `<icompose> down -v` (the instance's containers, networks, database volume and its two configuration volumes `<folder>_devcontainer_instance-claude-config` and `<folder>_devcontainer_instance-codex-config` go; the external `agent-*` volumes stay), then from the project folder `rm -rf <folder>` |
+
+## Rollback
+
+- A migration that fails rolls itself back: `apply-migrations` applies each pending file in its own transaction and stops at the first failure (`src/migrate.ts`).
+- A migration that applied but is wrong is fixed forward by a new migration file, tried in staging first and applied through the workflow deploy database. A file that was applied anywhere is never edited; there are no down migrations.
+- A restore from the encrypted backup of a deploy database run (its artifact `database-dump-<run id>`, kept 30 days) is done by a person with the private key from the owner password manager, never by an agent.
+- Apart from that restore, no manual SQL against production.
 
 ## Protected Areas
 

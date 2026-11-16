@@ -1,11 +1,16 @@
 # priitkustala/ai-news-backend#57 (MD-5): the database deployment of production.
-# Loads config/sources.json into the hosted database with the command staging runs at its build.
+# With dry_run off it backs up the app data encrypted to the owner's key, applies the pending migrations and loads config/sources.json (priitkustala/ai-news-backend#80); the default dry run changes nothing.
 # Runs only when the owner starts it by hand in Actions on main, never on a push; no agent starts, approves or reruns it.
 # The secret MIGRATION_DATABASE_URL is an environment secret the owner sets, never in a file.
 name: deploy database
 
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Dry run (no backup, no apply, no source load; the pending migrations are tried and rolled back)
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -21,6 +26,7 @@ jobs:
     environment: production
     env:
       MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+      DRY_RUN: ${{ inputs.dry_run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -30,5 +36,35 @@ jobs:
           node-version: 22
       - run: npm ci --ignore-scripts
       - run: npm run build
+      - name: dump
+        if: env.DRY_RUN != 'true'
+        env:
+          DUMP_PUBLIC_KEY: ${{ vars.DUMP_PUBLIC_KEY }}
+        run: |
+          test -n "$DUMP_PUBLIC_KEY" || { echo 'dump: the repository variable DUMP_PUBLIC_KEY is empty'; exit 1; }
+          major=$(( $(psql "$MIGRATION_DATABASE_URL" -XAtc 'show server_version_num') / 10000 ))
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y > /dev/null
+          sudo apt-get install -y -q --no-install-recommends "postgresql-client-$major" > /dev/null
+          echo "server major $major, pg_dump $("/usr/lib/postgresql/$major/bin/pg_dump" --version | awk '{print $3}')"
+          printf '%s\n' "$DUMP_PUBLIC_KEY" > dump-key.asc
+          "/usr/lib/postgresql/$major/bin/pg_dump" --schema=public --schema=app_private --no-owner "$MIGRATION_DATABASE_URL" \
+            | gpg --batch --yes --recipient-file dump-key.asc --output "database-dump-$GITHUB_RUN_ID.gpg" --encrypt
+      - if: env.DRY_RUN != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: database-dump-${{ github.run_id }}
+          path: database-dump-${{ github.run_id }}.gpg
+          if-no-files-found: error
+          retention-days: 30
+      - name: dry run
+        run: node dist/cli.js apply-migrations --dry-run
+      - name: apply
+        if: env.DRY_RUN != 'true'
+        run: node dist/cli.js apply-migrations
+      - name: after
+        run: |
+          node dist/cli.js apply-migrations --dry-run | tee after.json
+          node -e 'const r = JSON.parse(require("fs").readFileSync(0, "utf8")); if (r.owner_only_findings !== 0 || (process.env.DRY_RUN !== "true" && r.pending.length !== 0)) { console.log("after: pending " + r.pending.length + ", owner-only findings " + r.owner_only_findings); process.exit(1); }' < after.json
       - name: sources
+        if: env.DRY_RUN != 'true'
         run: node dist/cli.js seed-sources config/sources.json
