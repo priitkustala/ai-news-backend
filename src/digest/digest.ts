@@ -1,30 +1,36 @@
-// The digest step of the ingestion job (priitkustala/ai-news-backend#55): for each feed item
+// The digest step of the ingestion job (priitkustala/ai-news-backend#55, #88): for each feed item
 // without a digest, newest first and at most DIGEST_ITEMS_PER_RUN a run, the app's own job reads
 // the item's own page once, respecting the host's robots file, sends the item's fields and the
 // page's text to the model, and stores only the model's text as the item's digest, never the
-// article's. An item whose page cannot be read, or whose reply is refused, counts one attempt;
-// after DIGEST_MAX_ATTEMPTS it is not tried again. A failure of the model's interface stops the run
-// and keeps what is stored. Standard error carries counts, item ids and failure kinds only.
+// article's. The feed path: an item of a reddit source (its page is never read), an item whose page
+// cannot be read, and an item with DIGEST_MAX_ATTEMPTS attempts or more is sent with article_text
+// null, and its digest is stored with the mark [...] after it. A refused reply counts one attempt,
+// and the item is tried again on every run until a digest is stored. A failure of the model's
+// interface stops the run and keeps what is stored. Standard error carries counts, item ids and
+// failure kinds only.
 import { withClient, type Client } from '../db.js';
 import { fetchFeed, SourceFailure } from '../collect/fetch.js';
 import { robotsAllows } from '../collect/page.js';
 import { ARTICLE_MIN_CHARS, articleText, validDigest } from './text.js';
 
-export const DIGEST_ITEMS_PER_RUN = 40;
+export const DIGEST_ITEMS_PER_RUN = 100;
 export const DIGEST_MAX_ATTEMPTS = 3;
 export const PAGE_TIMEOUT_MS = 10_000;
 export const MODEL_TIMEOUT_MS = 60_000;
 export const DIGEST_MODEL = 'gpt-6-luna';
 export const DEFAULT_API_BASE = 'https://api.openai.com/v1';
 const MAX_COMPLETION_TOKENS = 2000;
+// The mark after a digest written from the feed text only: the whole article could not be read.
+const FEED_ONLY_MARK = '[...]';
 
 export const DIGEST_PROMPT = [
-  'You write the digest of one news article for a news app.',
-  'You are given the item\'s title, source name, category, feed summary and the text of its page as JSON.',
-  'Write the main content of the news in 4 to 8 plain English sentences, at most 1200 characters in all.',
+  'You write the digest of one news story for a news app whose readers want the news without reading the original article in complex English.',
+  'You are given the item\'s title, source name, category, feed summary and the text of its page as JSON; article_text is null when the page could not be read.',
+  'Write in professional English that is easy to understand: clear, short sentences, everyday words, and any technical term explained in a few plain words.',
+  'With article_text, write the main content of the news in 4 to 8 sentences, at most 1200 characters in all; if the given texts do not support a digest of the news, answer with the single word NONE.',
+  'Without article_text, write a shorter digest of 1 to 8 sentences, at most 1200 characters in all, from the title and feed summary only.',
   'Use only facts stated in the given texts; add no fact that is not in them.',
   'Write no link and no address of any kind.',
-  'If the given texts do not support a digest of the news, answer with the single word NONE.',
 ].join(' ');
 
 export type DigestReport = {
@@ -43,6 +49,8 @@ type PendingItem = {
   summary: string | null;
   canonical_url: string;
   source_name: string | null;
+  digest_attempts: number;
+  source_type: string | null;
 };
 
 const PAGE_OPTIONS = {
@@ -86,8 +94,9 @@ async function readArticle(link: string): Promise<{ text: string } | { skip: str
   return { text };
 }
 
-// The model's reply text, null for a 2xx answer without a string content, or a ModelStop.
-async function askModel(key: string, item: PendingItem, text: string): Promise<string | null> {
+// The model's reply text, null for a 2xx answer without a string content, or a ModelStop. text is
+// null on the feed path.
+async function askModel(key: string, item: PendingItem, text: string | null): Promise<string | null> {
   const base = process.env.DIGEST_API_BASE || DEFAULT_API_BASE;
   const user = JSON.stringify({
     title: item.title,
@@ -144,28 +153,35 @@ export async function digest(log: (line: string) => void): Promise<DigestReport>
   return withClient('DATABASE_URL', async (client) => {
     // The feed view's own condition, on the table the job's role may read and write.
     const pending = await client.query<PendingItem>(
-      `select i.id, i.title, i.category, i.summary, i.canonical_url, s.name as source_name
+      `select i.id, i.title, i.category, i.summary, i.canonical_url, s.name as source_name,
+              i.digest_attempts, s.source_type
          from public.items i
          left join app_private.sources s on s.id = i.source_id
         where i.status = 'processed' and i.is_representative and not i.arxiv_capped
-          and i.digest is null and i.digest_attempts < $1
+          and i.digest is null
         order by coalesce(i.published_at, i.fetched_at) desc, i.id
-        limit $2`,
-      [DIGEST_MAX_ATTEMPTS, DIGEST_ITEMS_PER_RUN],
+        limit $1`,
+      [DIGEST_ITEMS_PER_RUN],
     );
     report.pending = pending.rows.length;
     log(`digest: ${report.pending} pending`);
     for (const item of pending.rows) {
-      const article = await readArticle(item.canonical_url);
-      if ('skip' in article) {
-        await countAttempt(client, item.id);
-        report.article_skipped += 1;
-        log(`digest: item ${item.id} skipped (${article.skip})`);
-        continue;
+      // A reddit story's page is never read; a story with its page attempts used takes the feed path.
+      const feedOnly = item.source_type === 'reddit' || item.digest_attempts >= DIGEST_MAX_ATTEMPTS;
+      let text: string | null = null;
+      if (!feedOnly) {
+        const article = await readArticle(item.canonical_url);
+        if ('skip' in article) {
+          report.article_skipped += 1;
+          log(`digest: item ${item.id} skipped (${article.skip})`);
+        } else {
+          text = article.text;
+        }
       }
+      const from = text === null ? 'feed' : 'page';
       let reply: string | null;
       try {
-        reply = await askModel(key, item, article.text);
+        reply = await askModel(key, item, text);
       } catch (error) {
         if (!(error instanceof ModelStop)) throw error;
         report.status = 'stopped';
@@ -173,8 +189,8 @@ export async function digest(log: (line: string) => void): Promise<DigestReport>
         log(`digest: stopped at item ${item.id} (${error.reason})`);
         break;
       }
-      const text = reply === null ? null : validDigest(reply);
-      if (text === null) {
+      const checked = reply === null ? null : validDigest(reply, from);
+      if (checked === null) {
         await countAttempt(client, item.id);
         report.invalid += 1;
         log(`digest: item ${item.id} invalid (${reply === null ? 'no content' : 'refused reply'})`);
@@ -182,10 +198,10 @@ export async function digest(log: (line: string) => void): Promise<DigestReport>
       }
       await client.query(
         "update public.items set digest = $2, digest_method = 'model' where id = $1 and digest is null",
-        [item.id, text],
+        [item.id, from === 'feed' ? `${checked} ${FEED_ONLY_MARK}` : checked],
       );
       report.stored += 1;
-      log(`digest: item ${item.id} stored`);
+      log(`digest: item ${item.id} stored${from === 'feed' ? ' (feed only)' : ''}`);
     }
     log(`digest: ${report.status}, pending ${report.pending}, stored ${report.stored}, article_skipped ${report.article_skipped}, invalid ${report.invalid}`);
     return report;

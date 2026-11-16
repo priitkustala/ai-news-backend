@@ -1,8 +1,10 @@
 // The article digest's text rules (priitkustala/ai-news-backend#55): the plain text of an article
 // page, which is sent to the model and never stored, and the check of the model's reply before it
-// is stored as the item's digest. Pure; Node built-ins only.
+// is stored as the item's digest, with the page bound or, for a reply written from the feed text
+// only, the feed bound (priitkustala/ai-news-backend#88). Pure; Node built-ins only.
 
-// The stored digest's bounds, in characters after trimming.
+// The stored digest's bounds, in characters after trimming. A digest from the feed text only
+// (priitkustala/ai-news-backend#88) keeps the upper bound and has no lower bound.
 export const DIGEST_MIN_CHARS = 600;
 export const DIGEST_MAX_CHARS = 1200;
 // A page with less text than this is not read as an article.
@@ -12,6 +14,7 @@ export const ARTICLE_TEXT_MAX_CHARS = 12000;
 
 const DIGEST_MIN_SENTENCES = 4;
 const DIGEST_MAX_SENTENCES = 8;
+const FEED_DIGEST_MIN_SENTENCES = 1;
 
 const NAMED_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 
@@ -46,15 +49,19 @@ function sentenceCount(text: string): number {
   return (text.match(/[.!?](?=\s|$)/g) ?? []).length;
 }
 
-// The reply as the digest to store, or null: the word NONE, a link, a length outside 600 to 1200
-// characters or a sentence count outside 4 to 8 is refused.
-export function validDigest(reply: string): string | null {
+// The reply as the digest to store, or null: the word NONE and an address (http://, https:// or
+// www., in any case) are refused; from the page, a length outside 600 to 1200 characters or a
+// sentence count outside 4 to 8 is refused; from the feed (priitkustala/ai-news-backend#88), a
+// length over 1200 characters or a sentence count outside 1 to 8.
+export function validDigest(reply: string, from: 'page' | 'feed' = 'page'): string | null {
   const text = reply.trim();
   if (text.toUpperCase() === 'NONE') return null;
-  if (/http/i.test(text)) return null;
+  if (/https?:\/\/|www\./i.test(text)) return null;
   const length = Array.from(text).length;
-  if (length < DIGEST_MIN_CHARS || length > DIGEST_MAX_CHARS) return null;
+  const minChars = from === 'feed' ? 0 : DIGEST_MIN_CHARS;
+  if (length < minChars || length > DIGEST_MAX_CHARS) return null;
   const sentences = sentenceCount(text);
-  if (sentences < DIGEST_MIN_SENTENCES || sentences > DIGEST_MAX_SENTENCES) return null;
+  const minSentences = from === 'feed' ? FEED_DIGEST_MIN_SENTENCES : DIGEST_MIN_SENTENCES;
+  if (sentences < minSentences || sentences > DIGEST_MAX_SENTENCES) return null;
   return text;
 }
