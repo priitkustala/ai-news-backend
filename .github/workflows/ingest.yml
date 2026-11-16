@@ -4,7 +4,7 @@
 # This item runs the job only as a dry run.
 # priitkustala/ai-news-backend#55: with the dry run off, the step digest writes the article digests after the ingest;
 # its secret DIGEST_API_KEY is set by the owner in the repository settings, reaches that step only, never a file.
-name: ingest (manual dry run)
+name: ingest
 
 on:
   workflow_dispatch:
@@ -17,6 +17,8 @@ on:
         type: boolean
         default: true
         description: write nothing
+  schedule:
+    - cron: '17 4 * * *'
 
 permissions:
   contents: read
@@ -55,7 +57,7 @@ jobs:
           if [ "$DRY_RUN" = "true" ]; then dry_run_flag="--dry-run"; fi
           node dist/cli.js ingest "$run_date" $dry_run_flag
       - name: digest
-        if: ${{ inputs.dry_run == false }}
+        if: ${{ github.event_name == 'schedule' || inputs.dry_run == false }}
         env:
           DIGEST_API_KEY: ${{ secrets.DIGEST_API_KEY }}
         run: node dist/cli.js digest
