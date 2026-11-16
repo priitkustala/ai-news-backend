@@ -3,6 +3,8 @@
 // (AC-5); articleText turns an article page into its plain text, cut at 12000 characters. And AC-10's
 // check that no file of src/digest names the owner's private data. Runs on the built module after
 // npm run build; synthetic texts only, no request.
+// priitkustala/ai-news-backend#88 (AC-6): the link rule refuses an address only, and the feed bound
+// keeps a reply of 1 to 8 sentences and at most 1200 characters.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -87,6 +89,47 @@ test('a reply holding a link is refused', () => {
   const linked = `${reply.slice(0, 400)} https://example.com/x ${reply.slice(400 + 23)}`;
   assert.equal(linked.length, 800);
   assert.equal(valid(linked), null);
+});
+
+test('AC-6: a reply naming HTTP/3 with no address is kept', () => {
+  const reply = sentences(5, 800);
+  const named = `${reply.slice(0, 400)} HTTP/3 ${reply.slice(400 + 8)}`;
+  assert.equal(named.length, 800);
+  assert.equal(valid(named), named);
+});
+
+test('AC-6: a reply holding an address is refused', () => {
+  const reply = sentences(5, 800);
+  const linked = `${reply.slice(0, 400)} https://example.com/x ${reply.slice(400 + 23)}`;
+  const named = `${reply.slice(0, 400)} WWW.example.com ${reply.slice(400 + 17)}`;
+  assert.equal(linked.length, 800);
+  assert.equal(named.length, 800);
+  assert.equal(valid(linked), null);
+  assert.equal(valid(named), null);
+});
+
+// The feed bound (priitkustala/ai-news-backend#88): a reply written without the page's text.
+const validFeed = (reply) => {
+  assert.equal(typeof t.validDigest, 'function', 'validDigest is an exported function');
+  return t.validDigest(reply, 'feed');
+};
+
+test('AC-6: the feed bound keeps 1 sentence and 8 sentences', () => {
+  const one = sentences(1, 99);
+  const eight = sentences(8, 1000);
+  assert.equal(one.length, 99);
+  assert.equal(eight.length, 1000);
+  assert.equal(validFeed(`  ${one}\n`), one);
+  assert.equal(validFeed(` ${eight} `), eight);
+});
+
+test('AC-6: the feed bound refuses 9 sentences, 1201 characters and NONE', () => {
+  const long = sentences(5, 1201);
+  assert.equal(long.length, 1201);
+  assert.equal(validFeed(sentences(9, 800)), null);
+  assert.equal(validFeed(long), null);
+  assert.equal(validFeed('NONE'), null);
+  assert.equal(validFeed(' none '), null);
 });
 
 test('the reply NONE is refused in any case', () => {

@@ -1,11 +1,14 @@
 // 55-AC-10a (scenario, @surface-job, project api): priitkustala/ai-news-backend#55, criterion AC-10.
+// Changed specification: priitkustala/ai-news-backend#88 (DA-1), the owner decisions of 2026-11-16 (workspace Decisions rows 769 and 775).
 // The model receives the item's title, source name, category, feed summary and the article's text, and
-// nothing else.
+// nothing else, under an instruction that asks for professional English for a reader who skips the
+// original article (#88 AC-6).
 // Given set 55-AC-10 (two pending items on synthetic article pages, the first without a feed summary)
 // and the stand-in model in mode valid, when the job runs digest, then the stand-in recorded 2 calls of
-// model gpt-6-luna, each with two messages, system then user, the same system content in both, a user
-// content that parses to an object with exactly the keys title, source_name, category, feed_summary and
-// article_text, and the first item's feed_summary null.
+// model gpt-6-luna, each with two messages, system then user, the same system content in both, holding
+// Write in professional English that is easy to understand and without reading the original article in
+// complex English, a user content that parses to an object with exactly the keys title, source_name,
+// category, feed_summary and article_text, and the first item's feed_summary null.
 import { test, expect } from '@playwright/test';
 import { requireEnv, runMarker } from '../../support/env';
 import { digest, seed } from '../../support/job';
@@ -14,8 +17,8 @@ import { expectRows, readRelation, signIn } from '../../support/data';
 type Call = { n: number; body: { model?: unknown; reasoning_effort?: unknown; messages?: { role?: string; content?: string }[] } };
 
 test(
-  '55-AC-10a: digest sends the model only the item\'s fields and the article\'s text',
-  { tag: ['@journey-ingest', '@surface-job', '@story-55'] },
+  '55-AC-10a: digest sends the model only the item\'s fields and the article\'s text, asking for professional English',
+  { tag: ['@journey-ingest', '@surface-job', '@story-55', '@story-88'] },
   async ({ request }) => {
     // A job command plus the seed and the reads; two job commands near the 30 second default timed out under load (backend#37, backend#54).
     test.setTimeout(60_000);
@@ -37,7 +40,7 @@ test(
     // When: the job runs digest
     const result = digest({ DIGEST_API_BASE: `${fixtures}/model/valid/${run}`, DIGEST_API_KEY: 'stub-key' });
 
-    // Then: two calls, each with the five fields only
+    // Then: two calls, each with the five fields only and the instruction of professional English
     expect(result.exitCode, 'digest exits 0').toBe(0);
     const record = await request.get(`${fixtures}/model-calls/${run}`);
     expect(record.status(), 'the stand-in answers its record').toBe(200);
@@ -48,6 +51,9 @@ test(
       expect(call.body.reasoning_effort, 'the effort is none').toBe('none');
       const messages = call.body.messages ?? [];
       expect(messages.map((message) => message.role), 'two messages, system then user').toEqual(['system', 'user']);
+      expect(messages[0].content, 'the instruction asks for professional English').toContain('Write in professional English that is easy to understand');
+      expect(messages[0].content, 'the instruction names the reader who skips the original')
+        .toContain('without reading the original article in complex English');
       const input = JSON.parse(String(messages[1].content)) as Record<string, unknown>;
       expect(Object.keys(input).sort(), 'the input holds exactly the five fields').toEqual(
         ['article_text', 'category', 'feed_summary', 'source_name', 'title'],
