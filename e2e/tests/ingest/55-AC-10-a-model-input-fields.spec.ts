@@ -3,7 +3,7 @@
 // nothing else.
 // Given set 55-AC-10 (two pending items on synthetic article pages, the first without a feed summary)
 // and the stand-in model in mode valid, when the job runs digest, then the stand-in recorded 2 calls of
-// model gpt-5-nano, each with two messages, system then user, the same system content in both, a user
+// model gpt-6-luna, each with two messages, system then user, the same system content in both, a user
 // content that parses to an object with exactly the keys title, source_name, category, feed_summary and
 // article_text, and the first item's feed_summary null.
 import { test, expect } from '@playwright/test';
@@ -11,7 +11,7 @@ import { requireEnv, runMarker } from '../../support/env';
 import { digest, seed } from '../../support/job';
 import { expectRows, readRelation, signIn } from '../../support/data';
 
-type Call = { n: number; body: { model?: unknown; messages?: { role?: string; content?: string }[] } };
+type Call = { n: number; body: { model?: unknown; reasoning_effort?: unknown; messages?: { role?: string; content?: string }[] } };
 
 test(
   '55-AC-10a: digest sends the model only the item\'s fields and the article\'s text',
@@ -44,7 +44,8 @@ test(
     const calls = ((await record.json()) as { calls: Call[] }).calls;
     expect(calls.length, 'two model calls').toBe(2);
     const inputs = calls.map((call) => {
-      expect(call.body.model, 'the model is gpt-5-nano').toBe('gpt-5-nano');
+      expect(call.body.model, 'the model is gpt-6-luna').toBe('gpt-6-luna');
+      expect(call.body.reasoning_effort, 'the effort is none').toBe('none');
       const messages = call.body.messages ?? [];
       expect(messages.map((message) => message.role), 'two messages, system then user').toEqual(['system', 'user']);
       const input = JSON.parse(String(messages[1].content)) as Record<string, unknown>;
