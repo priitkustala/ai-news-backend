@@ -504,6 +504,12 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   '55-AC-12': (ctx) => digestSet(ctx, ['long', 'long', 'long']),
   // priitkustala/ai-news-backend#88 AC-8: one pending story of a reddit source, whose page is never read.
   '88-AC-08': (ctx) => digestSet(ctx, ['long'], { reddit: true }),
+  // priitkustala/ai-news#191 rows: every story of the day gets its digest on that day (DC-1).
+  '191-AC-1': (ctx) => digestSet(ctx, Array.from({ length: 150 }, () => 'long')),
+  '191-AC-2': (ctx) => digestSet(ctx, Array.from({ length: 10 }, () => 'long'), { attempts: { 2: 1, 4: 1, 6: 1, 8: 1, 10: 1 } }),
+  '191-AC-3': (ctx) => digestSet(ctx, Array.from({ length: 6 }, () => 'long')),
+  '191-AC-4': (ctx) => digestSet(ctx, ['long', 'long'], { attempts: { 1: 4, 2: 5 } }),
+  '191-AC-5': (ctx) => digestSet(ctx, ['long']),
   digests: (ctx) => storedDigests(ctx),
   // priitkustala/ai-news-frontend#77 (PSS-1): a phone page that must never grow wider than the screen.
   'long-words': (ctx) => longWords(ctx),

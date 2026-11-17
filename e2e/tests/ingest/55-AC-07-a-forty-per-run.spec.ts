@@ -1,10 +1,11 @@
 // 55-AC-07a (scenario, @surface-job, project api): priitkustala/ai-news-backend#55, criterion AC-7.
 // Changed specification: priitkustala/ai-news-backend#88 (DA-1), the owner decisions of 2026-11-16 (workspace Decisions rows 769 and 775).
-// One run sends at most 100 items, newest first, each with at most 12000 characters of article text (#88 AC-5).
+// Changed specification: priitkustala/ai-news#191 (DC-1), the owner report of 2026-11-17 (workspace Decisions rows 769 and 909).
+// One run sends every pending item, newest first, each with at most 12000 characters of article text (#88 AC-5).
 // Given set 55-AC-07 (105 pending items, published 1 to 105 minutes ago, each on a synthetic article page
 // with over 12000 characters of text) and the stand-in model in mode valid, when the job runs digest,
-// then pending is 100, the stand-in recorded 100 calls whose titles are the 100 newest items' in order,
-// each call's article_text has at most 12000 characters, and 5 items stay without a digest.
+// then pending is 105, the stand-in recorded 105 calls whose titles are the 105 items newest first,
+// each call's article_text has at most 12000 characters, and 0 items stay without a digest.
 import { test, expect } from '@playwright/test';
 import { requireEnv, runMarker } from '../../support/env';
 import { digest, seed } from '../../support/job';
@@ -24,11 +25,11 @@ function paragraphText(html: string): string {
 }
 
 test(
-  '55-AC-07a: digest sends at most 100 items, newest first, with at most 12000 characters each',
-  { tag: ['@journey-ingest', '@surface-job', '@story-55', '@story-88'] },
+  '55-AC-07a: digest sends every pending item, newest first, with at most 12000 characters each',
+  { tag: ['@journey-ingest', '@surface-job', '@story-55', '@story-88', '@bug-191'] },
   async ({ request }) => {
-    // A job command of 100 items plus the seed and the reads; two job commands near the 30 second default timed out under load (backend#37, backend#54).
-    test.setTimeout(60_000);
+    // A job command of 105 items plus the seed and the reads; two job commands near the 30 second default timed out under load (backend#37, backend#54).
+    test.setTimeout(90_000);
     // Given: 105 pending items on big article pages
     const run = runMarker();
     const manifest = seed('55-AC-07', run);
@@ -57,20 +58,20 @@ test(
     // When: the job runs digest
     const result = digest({ DIGEST_API_BASE: `${fixtures}/model/valid/${run}`, DIGEST_API_KEY: 'stub-key' });
 
-    // Then: 100 calls, newest first, each cut at 12000 characters
+    // Then: 105 calls, newest first, each cut at 12000 characters
     expect(result.exitCode, 'digest exits 0').toBe(0);
-    expect(result.report?.pending, 'the run takes 100 items').toBe(100);
+    expect(result.report?.pending, 'the run takes 105 items').toBe(105);
     const record = await request.get(`${fixtures}/model-calls/${run}`);
     expect(record.status(), 'the stand-in answers its record').toBe(200);
     const calls = ((await record.json()) as { calls: Call[] }).calls;
-    expect(calls.length, '100 model calls').toBe(100);
+    expect(calls.length, '105 model calls').toBe(105);
     const inputs = calls.map((call) =>
       JSON.parse(String(call.body.messages?.find((message) => message.role === 'user')?.content)) as { title?: string; article_text?: string });
-    expect(inputs.map((input) => input.title), 'the calls are the 100 newest items, newest first').toEqual(newest.slice(0, 100));
+    expect(inputs.map((input) => input.title), 'the calls are the 105 items, newest first').toEqual(newest);
     for (const input of inputs) {
       expect(String(input.article_text).length, 'the article text sent is at most 12000 characters').toBeLessThanOrEqual(12000);
     }
     const after = expectRows(await readRelation(request, 'items', owner), 'Then');
-    expect(after.filter((row) => row.digest === null).length, '5 items stay without a digest').toBe(5);
+    expect(after.filter((row) => row.digest === null).length, '0 items stay without a digest').toBe(0);
   },
 );
