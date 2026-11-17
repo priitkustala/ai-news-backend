@@ -1,7 +1,8 @@
 // The article digest's text rules (priitkustala/ai-news-backend#55): the plain text of an article
 // page, which is sent to the model and never stored, and the check of the model's reply before it
 // is stored as the item's digest, with the page bound or, for a reply written from the feed text
-// only, the feed bound (priitkustala/ai-news-backend#88). Pure; Node built-ins only.
+// only, the feed bound (priitkustala/ai-news-backend#88). rejectReason names why a reply is refused
+// (priitkustala/ai-news#191). Pure; Node built-ins only.
 
 // The stored digest's bounds, in characters after trimming. A digest from the feed text only
 // (priitkustala/ai-news-backend#88) keeps the upper bound and has no lower bound.
@@ -49,19 +50,27 @@ function sentenceCount(text: string): number {
   return (text.match(/[.!?](?=\s|$)/g) ?? []).length;
 }
 
-// The reply as the digest to store, or null: the word NONE and an address (http://, https:// or
-// www., in any case) are refused; from the page, a length outside 600 to 1200 characters or a
-// sentence count outside 4 to 8 is refused; from the feed (priitkustala/ai-news-backend#88), a
-// length over 1200 characters or a sentence count outside 1 to 8.
-export function validDigest(reply: string, from: 'page' | 'feed' = 'page'): string | null {
+// Why a reply is refused, or null when it passes: the word NONE (none) and an address (http://,
+// https:// or www., in any case; link) are refused; from the page, a length outside 600 to 1200
+// characters (length) or a sentence count outside 4 to 8 (sentences) is refused; from the feed
+// (priitkustala/ai-news-backend#88), a length over 1200 characters or a sentence count outside 1 to 8.
+// The checks run in this order (priitkustala/ai-news#191).
+export type RejectReason = 'none' | 'link' | 'length' | 'sentences';
+
+export function rejectReason(reply: string, from: 'page' | 'feed' = 'page'): RejectReason | null {
   const text = reply.trim();
-  if (text.toUpperCase() === 'NONE') return null;
-  if (/https?:\/\/|www\./i.test(text)) return null;
+  if (text.toUpperCase() === 'NONE') return 'none';
+  if (/https?:\/\/|www\./i.test(text)) return 'link';
   const length = Array.from(text).length;
   const minChars = from === 'feed' ? 0 : DIGEST_MIN_CHARS;
-  if (length < minChars || length > DIGEST_MAX_CHARS) return null;
+  if (length < minChars || length > DIGEST_MAX_CHARS) return 'length';
   const sentences = sentenceCount(text);
   const minSentences = from === 'feed' ? FEED_DIGEST_MIN_SENTENCES : DIGEST_MIN_SENTENCES;
-  if (sentences < minSentences || sentences > DIGEST_MAX_SENTENCES) return null;
-  return text;
+  if (sentences < minSentences || sentences > DIGEST_MAX_SENTENCES) return 'sentences';
+  return null;
+}
+
+// The reply as the digest to store, or null when rejectReason names a reason.
+export function validDigest(reply: string, from: 'page' | 'feed' = 'page'): string | null {
+  return rejectReason(reply, from) === null ? reply.trim() : null;
 }

@@ -1,20 +1,26 @@
-// The digest step of the ingestion job (priitkustala/ai-news-backend#55, #88): for each feed item
-// without a digest, newest first and at most DIGEST_ITEMS_PER_RUN a run, the app's own job reads
-// the item's own page once, respecting the host's robots file, sends the item's fields and the
-// page's text to the model, and stores only the model's text as the item's digest, never the
-// article's. The feed path: an item of a reddit source (its page is never read), an item whose page
-// cannot be read, and an item with DIGEST_MAX_ATTEMPTS attempts or more is sent with article_text
-// null, and its digest is stored with the mark [...] after it. A refused reply counts one attempt,
-// and the item is tried again on every run until a digest is stored. A failure of the model's
-// interface stops the run and keeps what is stored. Standard error carries counts, item ids and
+// The digest step of the ingestion job (priitkustala/ai-news-backend#55, #88; priitkustala/ai-news#191):
+// the pick takes every feed item without a digest and with fewer than DIGEST_GIVE_UP_ATTEMPTS
+// attempts, items never tried before ahead of items tried before and the newest first inside each
+// group, with no limit. For each, the app's own job reads the item's own page once, respecting the
+// host's robots file, sends the item's fields and the page's text to the model, and stores only the
+// model's text as the item's digest, never the article's. The feed path: an item of a reddit source
+// (its page is never read), an item whose page cannot be read, and an item with DIGEST_MAX_ATTEMPTS
+// attempts or more is sent with article_text null, and its digest is stored with the mark [...] after
+// it. A refused reply counts one attempt and its log line names the reason (rejectReason, or no
+// content); an item that reaches DIGEST_GIVE_UP_ATTEMPTS is given up, never picked again, and keeps
+// its feed summary in the app. The step has a time budget of DIGEST_TIME_BUDGET_MS (the environment
+// variable of that name, a positive whole number, replaces it in tests): once it is used no item is
+// started, the run reports budget, and the next run continues. A failure of the model's interface
+// stops the run and keeps what is stored. Standard error carries counts, item ids, reasons and
 // failure kinds only.
 import { withClient, type Client } from '../db.js';
 import { fetchFeed, SourceFailure } from '../collect/fetch.js';
 import { robotsAllows } from '../collect/page.js';
-import { ARTICLE_MIN_CHARS, articleText, validDigest } from './text.js';
+import { ARTICLE_MIN_CHARS, articleText, rejectReason } from './text.js';
 
-export const DIGEST_ITEMS_PER_RUN = 100;
 export const DIGEST_MAX_ATTEMPTS = 3;
+export const DIGEST_GIVE_UP_ATTEMPTS = 5;
+export const DIGEST_TIME_BUDGET_MS = 15 * 60_000;
 export const PAGE_TIMEOUT_MS = 10_000;
 export const MODEL_TIMEOUT_MS = 60_000;
 export const DIGEST_MODEL = 'gpt-6-luna';
@@ -34,12 +40,21 @@ export const DIGEST_PROMPT = [
 ].join(' ');
 
 export type DigestReport = {
-  status: 'done' | 'skipped' | 'stopped';
+  status: 'done' | 'skipped' | 'stopped' | 'budget';
   reason: string | null;
   pending: number;
   stored: number;
   article_skipped: number;
   invalid: number;
+  stored_page: number;
+  stored_feed: number;
+  invalid_none: number;
+  invalid_link: number;
+  invalid_length: number;
+  invalid_sentences: number;
+  invalid_no_content: number;
+  given_up: number;
+  left: number;
 };
 
 type PendingItem = {
@@ -139,33 +154,54 @@ async function askModel(key: string, item: PendingItem, text: string | null): Pr
   }
 }
 
+// The step's time budget: the environment variable DIGEST_TIME_BUDGET_MS when it holds a positive
+// whole number (tests only), else the constant.
+function timeBudgetMs(): number {
+  const value = process.env.DIGEST_TIME_BUDGET_MS ?? '';
+  return /^[0-9]+$/.test(value) && Number(value) > 0 ? Number(value) : DIGEST_TIME_BUDGET_MS;
+}
+
 async function countAttempt(client: Client, id: string): Promise<void> {
   await client.query('update public.items set digest_attempts = digest_attempts + 1 where id = $1', [id]);
 }
 
-export async function digest(log: (line: string) => void): Promise<DigestReport> {
-  const report: DigestReport = { status: 'done', reason: null, pending: 0, stored: 0, article_skipped: 0, invalid: 0 };
+// The skipped run's report: the six keys of ai-news-backend#55 only.
+export type SkippedReport = Pick<DigestReport, 'status' | 'reason' | 'pending' | 'stored' | 'article_skipped' | 'invalid'>;
+
+export async function digest(log: (line: string) => void): Promise<DigestReport | SkippedReport> {
+  const start = Date.now();
+  const report: DigestReport = {
+    status: 'done', reason: null, pending: 0, stored: 0, article_skipped: 0, invalid: 0,
+    stored_page: 0, stored_feed: 0, invalid_none: 0, invalid_link: 0, invalid_length: 0, invalid_sentences: 0,
+    invalid_no_content: 0, given_up: 0, left: 0,
+  };
   const key = process.env.DIGEST_API_KEY ?? '';
   if (key === '') {
     log('digest: skipped (no key)');
-    return { ...report, status: 'skipped', reason: 'no key' };
+    return { status: 'skipped', reason: 'no key', pending: 0, stored: 0, article_skipped: 0, invalid: 0 };
   }
+  const budget = timeBudgetMs();
   return withClient('DATABASE_URL', async (client) => {
-    // The feed view's own condition, on the table the job's role may read and write.
+    // The feed view's own condition, on the table the job's role may read and write. Every pending
+    // item: never tried before first, then tried before, the newest first in each group.
     const pending = await client.query<PendingItem>(
       `select i.id, i.title, i.category, i.summary, i.canonical_url, s.name as source_name,
               i.digest_attempts, s.source_type
          from public.items i
          left join app_private.sources s on s.id = i.source_id
         where i.status = 'processed' and i.is_representative and not i.arxiv_capped
-          and i.digest is null
-        order by coalesce(i.published_at, i.fetched_at) desc, i.id
-        limit $1`,
-      [DIGEST_ITEMS_PER_RUN],
+          and i.digest is null and i.digest_attempts < $1
+        order by i.digest_attempts > 0, coalesce(i.published_at, i.fetched_at) desc, i.id`,
+      [DIGEST_GIVE_UP_ATTEMPTS],
     );
     report.pending = pending.rows.length;
     log(`digest: ${report.pending} pending`);
     for (const item of pending.rows) {
+      if (Date.now() - start >= budget) {
+        report.status = 'budget';
+        log(`digest: budget used at item ${item.id}`);
+        break;
+      }
       // A reddit story's page is never read; a story with its page attempts used takes the feed path.
       const feedOnly = item.source_type === 'reddit' || item.digest_attempts >= DIGEST_MAX_ATTEMPTS;
       let text: string | null = null;
@@ -189,21 +225,45 @@ export async function digest(log: (line: string) => void): Promise<DigestReport>
         log(`digest: stopped at item ${item.id} (${error.reason})`);
         break;
       }
-      const checked = reply === null ? null : validDigest(reply, from);
-      if (checked === null) {
+      const reason = reply === null ? 'no content' : rejectReason(reply, from);
+      if (reply === null || reason !== null) {
         await countAttempt(client, item.id);
         report.invalid += 1;
-        log(`digest: item ${item.id} invalid (${reply === null ? 'no content' : 'refused reply'})`);
+        if (reason === 'none') report.invalid_none += 1;
+        else if (reason === 'link') report.invalid_link += 1;
+        else if (reason === 'length') report.invalid_length += 1;
+        else if (reason === 'sentences') report.invalid_sentences += 1;
+        else report.invalid_no_content += 1;
+        log(`digest: item ${item.id} invalid (${reason})`);
         continue;
       }
+      const checked = reply.trim();
       await client.query(
         "update public.items set digest = $2, digest_method = 'model' where id = $1 and digest is null",
         [item.id, from === 'feed' ? `${checked} ${FEED_ONLY_MARK}` : checked],
       );
       report.stored += 1;
+      if (from === 'feed') report.stored_feed += 1;
+      else report.stored_page += 1;
       log(`digest: item ${item.id} stored${from === 'feed' ? ' (feed only)' : ''}`);
     }
-    log(`digest: ${report.status}, pending ${report.pending}, stored ${report.stored}, article_skipped ${report.article_skipped}, invalid ${report.invalid}`);
+    const givenUp = await client.query<{ count: number }>(
+      `select count(*)::int as count from public.items i
+        where i.status = 'processed' and i.is_representative and not i.arxiv_capped and i.digest is null and i.digest_attempts >= $1`,
+      [DIGEST_GIVE_UP_ATTEMPTS],
+    );
+    report.given_up = givenUp.rows[0].count;
+    const left = await client.query<{ count: number }>(
+      `select count(*)::int as count from public.items i
+        where i.status = 'processed' and i.is_representative and not i.arxiv_capped and i.digest is null and i.digest_attempts < $1`,
+      [DIGEST_GIVE_UP_ATTEMPTS],
+    );
+    report.left = left.rows[0].count;
+    const status = report.status === 'stopped' ? `stopped (${report.reason})` : report.status;
+    log(`digest: ${status}, pending ${report.pending}, stored ${report.stored} (page ${report.stored_page}, feed ${report.stored_feed}), `
+      + `article_skipped ${report.article_skipped}, invalid ${report.invalid} (none ${report.invalid_none}, link ${report.invalid_link}, `
+      + `length ${report.invalid_length}, sentences ${report.invalid_sentences}, no content ${report.invalid_no_content}), `
+      + `given_up ${report.given_up}, left ${report.left}`);
     return report;
   });
 }

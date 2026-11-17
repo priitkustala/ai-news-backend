@@ -26,7 +26,7 @@ Commands of the job and the local test environment:
   notify <run-date>                 send the run date's one push notification to the owner's subscriptions (YYYY-MM-DD)
   summaries-pending [--limit N]     list the items without a usable summary, newest first (default 30), one JSON line each
   summaries-apply                   store model-written summaries read as JSON lines of id and text on standard input
-  digest                            write a model digest for up to 100 feed items without one (DIGEST_API_KEY; none: skipped)
+  digest                            write a model digest for every pending feed item within a 15-minute budget (DIGEST_API_KEY; none: skipped)
   seed <fixture-set> <run-marker>   reset the local database to the base seed plus a fixture set
   sign-in <persona>                 development sign-in of a seeded persona (${PERSONAS.join(', ')}); prints its access token
   scan-secrets <path>...            scan a repository, a folder or a file for this stack's seeded secrets
