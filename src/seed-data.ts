@@ -505,6 +505,8 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   // priitkustala/ai-news-backend#88 AC-8: one pending story of a reddit source, whose page is never read.
   '88-AC-08': (ctx) => digestSet(ctx, ['long'], { reddit: true }),
   digests: (ctx) => storedDigests(ctx),
+  // priitkustala/ai-news-frontend#77 (PSS-1): a phone page that must never grow wider than the screen.
+  'long-words': (ctx) => longWords(ctx),
 
   // ai-news-frontend rows.
   'AC-03a': (ctx) => ({ sources: [source('fixture-hostile-title', 'Fixture feed with a script title', fixtureFeed(ctx, 'hostile-title.xml'))] }),
@@ -904,5 +906,31 @@ function laterRunCopies(ctx: SeedContext, weightB: number, copyBAt: Date): Extra
       later_copy_published_at: copyB.toISOString(),
       ...(weightB > 1 ? { kept_copy_url: kept.canonical_url, kept_copy_item_id: kept.id } : {}),
     }),
+  };
+}
+
+// priitkustala/ai-news-frontend#77 (PSS-1): the Given of a phone page that must never grow wider than the screen.
+// One item in releases and one in research, on a source whose name holds a run of 120 letters with no break point;
+// each item title, summary, digest and original address hold such a run too (no space, hyphen, slash or dot in it).
+function longWords(ctx: SeedContext): Extra {
+  const word = 'x'.repeat(120);
+  const stored = source('fixture-long-words', `Fixture${word}`, fixtureFeed(ctx, 'ok.xml'));
+  const host = `https://${'x'.repeat(60)}.example.com`;
+  const titles = [`${ctx.run}-${word}`, `${ctx.run}-research-${word}`];
+  const items = (['releases', 'research'] as Category[]).map((category, index): ItemRow => {
+    const slug = `${ctx.run}-long-words-${index + 1}`;
+    const url = `${host}/ai-news-fixture/${slug}`;
+    return {
+      ...item(stored, slug, titles[index], category, ago(ctx, (index + 1) * 10 * MINUTE)),
+      id: itemId(url),
+      canonical_url: url,
+      summary: `Synthetic summary ${word}.`,
+      digest: `Synthetic digest ${word}.`,
+    };
+  });
+  return {
+    sources: [stored],
+    items,
+    manifest: () => ({ long_title: titles[0], research_title: titles[1], ids: items.map((row) => row.id) }),
   };
 }
