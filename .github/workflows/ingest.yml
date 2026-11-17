@@ -4,6 +4,7 @@
 # This item runs the job only as a dry run.
 # priitkustala/ai-news-backend#55: with the dry run off, the step digest writes the article digests after the ingest;
 # its secret DIGEST_API_KEY is set by the owner in the repository settings, reaches that step only, never a file.
+# priitkustala/ai-news-backend#98: three scheduled starts a day (04:17, 10:17 and 16:17 UTC), so one dropped start loses no day.
 name: ingest
 
 on:
@@ -19,6 +20,8 @@ on:
         description: write nothing
   schedule:
     - cron: '17 4 * * *'
+    - cron: '17 10 * * *'
+    - cron: '17 16 * * *'
 
 permissions:
   contents: read
