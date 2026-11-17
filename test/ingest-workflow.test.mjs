@@ -45,7 +45,8 @@ test('the workflow runs one at a time: a top-level concurrency block between per
 
 // priitkustala/ai-news-backend#73 (DR-1): the workflow ingest starts by hand and once a day by itself at 04:17 UTC,
 // the input dry_run still defaults to true, and the workflow is named ingest.
-test('the triggers are workflow_dispatch with its two inputs and one daily schedule', () => {
+// priitkustala/ai-news-backend#98 (DI-1): three starts a day, at 04:17, 10:17 and 16:17 UTC, so one dropped start loses no day.
+test('the triggers are workflow_dispatch with its two inputs and three daily schedule entries', () => {
   const from = lines.indexOf('on:');
   const to = lines.indexOf('permissions:');
   assert.ok(from >= 0 && to > from, 'on: comes before permissions:');
@@ -63,8 +64,10 @@ test('the triggers are workflow_dispatch with its two inputs and one daily sched
     '        description: write nothing',
     '  schedule:',
     '    - cron: \'17 4 * * *\'',
+    '    - cron: \'17 10 * * *\'',
+    '    - cron: \'17 16 * * *\'',
   ]);
-  assert.equal(lines.filter((line) => line.trimStart().startsWith('- cron:')).length, 1, 'exactly one schedule entry');
+  assert.equal(lines.filter((line) => line.trimStart().startsWith('- cron:')).length, 3, 'exactly three schedule entries');
 });
 
 test('the input dry_run still defaults to true', () => {
