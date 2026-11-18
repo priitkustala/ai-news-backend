@@ -173,3 +173,45 @@ test('AC-10: no file of src/digest names bookmarks, push subscriptions, the owne
     assert.deepEqual(hits, [], `${name} matches the pattern`);
   }
 });
+
+// priitkustala/ai-news#191 (AC-5): rejectReason names why a reply is refused, by the checks of
+// validDigest in their order, and is null for a reply validDigest keeps.
+test('AC-5: rejectReason names none', () => {
+  assert.equal(typeof t.rejectReason, 'function', 'rejectReason is an exported function');
+  assert.equal(t.rejectReason('NONE'), 'none');
+  assert.equal(t.rejectReason('  none \n', 'feed'), 'none');
+});
+
+test('AC-5: rejectReason names link', () => {
+  assert.equal(typeof t.rejectReason, 'function', 'rejectReason is an exported function');
+  const text = sentences(5, 800);
+  assert.equal(t.rejectReason(`${text} See https://example.com/a for more.`), 'link');
+  assert.equal(t.rejectReason(`${text} See www.example.com for more.`, 'feed'), 'link');
+});
+
+test('AC-5: rejectReason names length', () => {
+  assert.equal(typeof t.rejectReason, 'function', 'rejectReason is an exported function');
+  const short = sentences(5, 599);
+  assert.equal(short.length, 599);
+  assert.equal(t.rejectReason(short), 'length');
+  assert.equal(t.rejectReason(sentences(5, 1201), 'feed'), 'length');
+});
+
+test('AC-5: rejectReason names sentences', () => {
+  assert.equal(typeof t.rejectReason, 'function', 'rejectReason is an exported function');
+  const three = sentences(3, 800);
+  assert.equal(three.length, 800);
+  assert.equal(t.rejectReason(three), 'sentences');
+  assert.equal(t.rejectReason(words(300), 'feed'), 'sentences');
+});
+
+test('AC-5: rejectReason is null for a valid page reply and a valid feed reply', () => {
+  assert.equal(typeof t.rejectReason, 'function', 'rejectReason is an exported function');
+  const page = sentences(5, 800);
+  assert.equal(t.rejectReason(page), null);
+  assert.equal(t.rejectReason(page, 'page'), null);
+  assert.equal(t.validDigest(page), page);
+  const feed = sentences(2, 300);
+  assert.equal(t.rejectReason(feed, 'feed'), null);
+  assert.equal(t.validDigest(feed, 'feed'), feed);
+});

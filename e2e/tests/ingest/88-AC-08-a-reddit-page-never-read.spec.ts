@@ -1,4 +1,5 @@
 // 88-AC-08a (scenario, @surface-job, project api): priitkustala/ai-news-backend#88 (DA-1), criterion AC-8.
+// Changed specification: priitkustala/ai-news#191 (DC-1), the report gains its new counts after the six keys.
 // A story of a reddit source never has its page read (workspace Decisions row 774): it gets its digest
 // from the feed text at once.
 // Given set 88-AC-08 (one pending story of the reddit source r/artificial, linking to a synthetic
@@ -59,6 +60,7 @@ test(
     expect(result.exitCode, 'digest exits 0').toBe(0);
     expect(result.report, 'the last line is the digest report').toEqual({
       status: 'done', reason: null, pending: 1, stored: 1, article_skipped: 0, invalid: 0,
+      stored_page: 0, stored_feed: 1, invalid_none: 0, invalid_link: 0, invalid_length: 0, invalid_sentences: 0, invalid_no_content: 0, given_up: 0, left: 0,
     });
     const logAfter = await request.get(`${fixtures}/requests`);
     expect(logAfter.status(), 'the fixture server answers its request log').toBe(200);

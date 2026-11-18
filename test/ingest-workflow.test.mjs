@@ -125,7 +125,8 @@ test('DIGEST_API_KEY is in no other step and not in the job\'s environment', () 
   assert.equal(jobEnv().some((line) => line.includes('DIGEST_API_KEY')), false);
 });
 
-test('the job may run 20 minutes', () => {
-  assert.ok(lines.includes('    timeout-minutes: 20'));
-  assert.equal(lines.some((line) => /timeout-minutes: 10\b/.test(line)), false);
+// priitkustala/ai-news#191: the digest step works until nothing is pending or its 15-minute budget is used.
+test('the job may run 30 minutes', () => {
+  assert.ok(lines.includes('    timeout-minutes: 30'));
+  assert.equal(lines.some((line) => /timeout-minutes: (10|20)\b/.test(line)), false);
 });

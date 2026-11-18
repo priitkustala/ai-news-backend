@@ -5,6 +5,7 @@
 # priitkustala/ai-news-backend#55: with the dry run off, the step digest writes the article digests after the ingest;
 # its secret DIGEST_API_KEY is set by the owner in the repository settings, reaches that step only, never a file.
 # priitkustala/ai-news-backend#98: three scheduled starts a day (04:17, 10:17 and 16:17 UTC), so one dropped start loses no day.
+# priitkustala/ai-news#191: the digest step works until nothing is pending or its 15-minute budget is used, so the job may run 30 minutes.
 name: ingest
 
 on:
@@ -33,7 +34,7 @@ concurrency:
 jobs:
   ingest:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       DATABASE_URL: ${{ secrets.INGEST_DATABASE_URL }}
       RUN_DATE: ${{ inputs.run_date }}

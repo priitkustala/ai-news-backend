@@ -1,5 +1,6 @@
 // 55-AC-06a (scenario, @surface-job, project api): priitkustala/ai-news-backend#55, criterion AC-6.
 // Changed specification: priitkustala/ai-news-backend#88 (DA-1), the owner decisions of 2026-11-16 (workspace Decisions rows 769 and 775).
+// Changed specification: priitkustala/ai-news#191 (DC-1), the report gains its new counts after the six keys.
 // An item that has used its three attempts is not read again, and gets its digest from the feed text (#88 AC-2).
 // Given set 55-AC-06 (two items on synthetic article pages; the second, older one already has
 // digest_attempts 3) and the stand-in model in mode valid, when the job runs digest, then pending is 2,
@@ -61,6 +62,7 @@ test(
     expect(result.exitCode, 'digest exits 0').toBe(0);
     expect(result.report, 'the last line is the digest report').toEqual({
       status: 'done', reason: null, pending: 2, stored: 2, article_skipped: 0, invalid: 0,
+      stored_page: 1, stored_feed: 1, invalid_none: 0, invalid_link: 0, invalid_length: 0, invalid_sentences: 0, invalid_no_content: 0, given_up: 0, left: 0,
     });
     const record = await request.get(`${fixtures}/model-calls/${run}`);
     expect(record.status(), 'the stand-in answers its record').toBe(200);

@@ -1,4 +1,5 @@
 // 55-AC-12a (scenario, @surface-job, project api): priitkustala/ai-news-backend#55, criterion AC-12.
+// Changed specification: priitkustala/ai-news#191 (DC-1), the report gains its new counts after the six keys.
 // A vendor error stops the run; the digests stored before it stay, and the failed item's attempt is not
 // counted.
 // Given set 55-AC-12 (three pending items on synthetic article pages) and the stand-in model in mode
@@ -49,6 +50,7 @@ test(
     expect(result.exitCode, 'digest exits 0').toBe(0);
     expect(result.report, 'the last line is the stopped report').toEqual({
       status: 'stopped', reason: 'http-401', pending: 3, stored: 1, article_skipped: 0, invalid: 0,
+      stored_page: 1, stored_feed: 0, invalid_none: 0, invalid_link: 0, invalid_length: 0, invalid_sentences: 0, invalid_no_content: 0, given_up: 0, left: 2,
     });
     const record = await request.get(`${fixtures}/model-calls/${run}`);
     expect(record.status(), 'the stand-in answers its record').toBe(200);

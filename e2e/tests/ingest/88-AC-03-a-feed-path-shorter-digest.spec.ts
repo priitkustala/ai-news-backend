@@ -1,4 +1,5 @@
 // 88-AC-03a (scenario, @surface-job, project api): priitkustala/ai-news-backend#88 (DA-1), criterion AC-3.
+// Changed specification: priitkustala/ai-news#191 (DC-1), the report gains its new counts after the six keys.
 // The feed path keeps a shorter reply that the page path refuses.
 // Given set 55-AC-06 (two items on synthetic article pages; the second, older one already has
 // digest_attempts 3) and the stand-in model in mode three (a reply of 704 characters and 3 sentences),
@@ -50,6 +51,7 @@ test(
     expect(result.exitCode, 'digest exits 0').toBe(0);
     expect(result.report, 'the last line is the digest report').toEqual({
       status: 'done', reason: null, pending: 2, stored: 1, article_skipped: 0, invalid: 1,
+      stored_page: 0, stored_feed: 1, invalid_none: 0, invalid_link: 0, invalid_length: 0, invalid_sentences: 1, invalid_no_content: 0, given_up: 0, left: 1,
     });
     const newer = expectRows(await readRelation(request, 'items', owner, `id=eq.${ids[0]}`), 'Then');
     expect(newer.length).toBe(1);

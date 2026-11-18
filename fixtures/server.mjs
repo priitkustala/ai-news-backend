@@ -24,8 +24,11 @@
 // disallows /pages/blocked/ to every agent (the page reader, priitkustala/ai-news-backend#41).
 // The article digest (priitkustala/ai-news-backend#55) gets a stand-in for the model vendor's chat
 // completions at POST /model/MODE/KEY/chat/completions (its calls recorded per KEY and read back at
-// GET /model-calls/KEY) and synthetic article pages at /digest-pages/KIND/NAME.html, of which
-// /robots.txt disallows /digest-pages/blocked/.
+// GET /model-calls/KEY, each call with the time it arrived as at) and synthetic article pages at
+// /digest-pages/KIND/NAME.html, of which /robots.txt disallows /digest-pages/blocked/. Three modes
+// for every story of the day (priitkustala/ai-news#191): slow answers the valid reply after 1000
+// milliseconds, nocontent answers 200 in the vendor's form with content null, and http429 answers
+// 429 with the stub error body.
 // Node 22's built-in modules only.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -98,6 +101,9 @@ const MODEL_REPLIES = {
   link: STUB_LINK,
   none: 'NONE',
   fail401second: STUB_DIGEST,
+  slow: STUB_DIGEST,
+  nocontent: null,
+  http429: null,
 };
 const MODEL_CALL_KEYS_LIMIT = 200;
 const modelCalls = new Map();
@@ -152,10 +158,14 @@ async function modelCompletion(request, response, mode, key) {
   }
   const calls = modelCalls.get(key);
   const n = calls.length + 1;
-  calls.push({ n, body });
+  calls.push({ n, body, at: Date.now() });
   if (mode === 'fail401second' && n === 2) {
     return send(response, 401, 'application/json', JSON.stringify({ error: { message: 'stub', type: 'invalid_request_error' } }));
   }
+  if (mode === 'http429') {
+    return send(response, 429, 'application/json', JSON.stringify({ error: { message: 'stub', type: 'invalid_request_error' } }));
+  }
+  if (mode === 'slow') await new Promise((resolve) => setTimeout(resolve, 1000));
   return send(response, 200, 'application/json', JSON.stringify({
     id: `stub-${key}-${n}`,
     object: 'chat.completion',
