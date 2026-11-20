@@ -18,12 +18,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { UsageError } from '../env.js';
 import { isArxivSource } from '../collect/collect.js';
-import { isRunner, RUNNERS, type Runner } from '../ingest/ingest.js';
+import { type Runner } from '../ingest/ingest.js';
 import { fetchFeed, SourceFailure } from '../collect/fetch.js';
 import { parseFeedItems, type FeedEntry } from '../collect/parse.js';
 import { canonicalUrl } from '../process/dedupe.js';
 import { CATEGORIES } from '../process/category-rules.js';
 import { MeasureError, trackedByGit } from './sample.js';
+import { readSourceRecords, SourceRecordError } from '../sources/record.js';
 
 export const WINDOW_DAYS = 7;
 export const MAX_ITEMS_PER_SOURCE = 20;
@@ -42,6 +43,8 @@ type DrawSource = {
   source_weight: number;
   // The runner that fetches the source (priitkustala/ai-news-backend#86); absent in the file means cloud.
   runner: Runner;
+  community: string | null;
+  image_policy: string;
 };
 
 export type Dropped = { no_link: number; no_time: number; outside_window: number; repeated: number; over_cap: number; oversized: number };
@@ -73,23 +76,25 @@ export function readSources(file: string): { input: Buffer; sources: DrawSource[
   }
   const list = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>).sources : undefined;
   if (!Array.isArray(list) || list.length === 0) throw new UsageError('--sources <file> needs a non-empty list under the key sources');
-  const sources = list.map((entry, index): DrawSource => {
-    const s = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
-    if (typeof s.id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(s.id)) throw new UsageError(`--sources <file>: source ${index + 1} needs an id of lower-case letters, digits and hyphens`);
-    if (typeof s.feed_url !== 'string' || s.feed_url === '') throw new UsageError(`--sources <file>: source ${s.id} has no feed_url`);
-    if (s.runner !== undefined && !isRunner(s.runner)) throw new UsageError(`--sources <file>: source ${s.id} has a runner other than ${RUNNERS.join(' or ')}`);
-    return {
-      id: s.id,
-      name: typeof s.name === 'string' ? s.name : s.id,
-      feed_url: s.feed_url,
-      source_type: typeof s.source_type === 'string' ? s.source_type : 'feed',
-      default_categories: Array.isArray(s.default_categories) ? s.default_categories.map(String) : [],
-      display_policy: typeof s.display_policy === 'string' ? s.display_policy : 'title-link',
-      source_weight: typeof s.source_weight === 'number' ? s.source_weight : 1,
-      runner: s.runner === undefined ? 'cloud' : (s.runner as Runner),
-    };
-  });
-  if (new Set(sources.map((s) => s.id)).size !== sources.length) throw new UsageError('--sources <file>: a source id appears twice');
+  let read: ReturnType<typeof readSourceRecords>;
+  try {
+    read = readSourceRecords(list, 'sources-file');
+  } catch (error) {
+    if (error instanceof SourceRecordError) throw new UsageError(`--sources <file>: ${error.message}`);
+    throw error;
+  }
+  const sources = read.map((s): DrawSource => ({
+    id: s.id,
+    name: s.name,
+    feed_url: s.feed_url as string,
+    source_type: s.source_type,
+    default_categories: s.default_categories,
+    display_policy: s.display_policy,
+    source_weight: s.source_weight,
+    runner: s.runner,
+    community: s.community,
+    image_policy: s.image_policy,
+  }));
   return { input, sources };
 }
 
