@@ -278,6 +278,7 @@ test('AC-4 the stall route keeps the connection open', async () => {
 test('AC-4 the disconnect route drops the connection', async () => {
   const { request, response } = await open('/disconnect/body/t97-disconnect');
   assert.equal(response.statusCode, 200);
+  assert.equal(response.headers['content-type'], 'application/rss+xml; charset=utf-8');
   let ended = false;
   response.on('data', () => {});
   response.on('end', () => { ended = true; });
