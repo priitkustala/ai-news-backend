@@ -8,6 +8,7 @@ import { requireEnv, UsageError } from './env.js';
 import { inTransaction, withClient, type Client } from './db.js';
 import { fixtureSet, fixtureSetNames, type FixtureSet } from './seed-data.js';
 import { latestRunId, storeOtherShare } from './ingest/other-share.js';
+import { readSourceRecord } from './sources/record.js';
 
 const RUN_MARKER = /^[A-Za-z0-9][A-Za-z0-9-]{0,62}$/;
 
@@ -22,12 +23,13 @@ export async function loadSet(client: Client, set: FixtureSet, windowEnd: Date =
     await client.query('delete from app_private.sources');
     await client.query('delete from app_private.reddit_credentials_withheld');
     if (set.reddit_credentials_withheld) await client.query('insert into app_private.reddit_credentials_withheld default values');
-    for (const s of set.sources) {
+    for (const [index, entry] of set.sources.entries()) {
+      const s = readSourceRecord(entry, index, 'seed');
       await client.query(
         `insert into app_private.sources (id, name, feed_url, source_type, community, default_categories, image_policy, display_policy, source_weight)
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [s.id, s.name, s.feed_url, s.source_type ?? 'feed', s.community ?? null, s.default_categories ?? [],
-          s.image_policy ?? 'placeholder', s.display_policy ?? 'title-link', s.source_weight ?? 1],
+        [s.id, s.name, s.feed_url, s.source_type, s.community, s.default_categories,
+          s.image_policy, s.display_policy, s.source_weight],
       );
     }
     for (const i of set.items) {

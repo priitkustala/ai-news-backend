@@ -20,7 +20,7 @@ export async function seedSources(file: string): Promise<SeedSourcesReport> {
         await client.query(
           `insert into app_private.sources (id, name, feed_url, source_type, community, default_categories, image_policy, display_policy, source_weight, runner)
            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          [s.id, s.name, s.feed_url, s.source_type, null, s.default_categories, 'placeholder', s.display_policy, s.source_weight, s.runner],
+          [s.id, s.name, s.feed_url, s.source_type, s.community, s.default_categories, s.image_policy, s.display_policy, s.source_weight, s.runner],
         );
       }
     });

@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { repositoryRoot, UsageError } from '../env.js';
+import { readSourceRecords, SourceRecordError } from '../sources/record.js';
 
 export const SAMPLE_FILE = path.join(repositoryRoot, 'fixtures', 'validation-sample', 'sample.json');
 export const LABELS_FILE = path.join(repositoryRoot, 'fixtures', 'validation-sample', 'labels.json');
@@ -95,20 +96,22 @@ export function readSample(file: string = SAMPLE_FILE): Sample {
   if (Number.isNaN(start) || Number.isNaN(end) || end <= start) throw new MeasureError('sample.json: window needs a start before its end');
   const max = raw.max_items_per_source;
   if (typeof max !== 'number' || !Number.isInteger(max) || max < 1) throw new MeasureError('sample.json: max_items_per_source must be a positive whole number');
-  const sources = records(raw.sources).map((s, index): SampleSource => {
-    if (typeof s.id !== 'string' || s.id === '') throw new MeasureError(`sample.json: source ${index + 1} has no id`);
-    if (!Array.isArray(s.feed) || !s.feed.every((line) => typeof line === 'string')) throw new MeasureError(`sample.json: source ${s.id} has no saved feed`);
-    return {
-      id: s.id,
-      source_type: typeof s.source_type === 'string' ? s.source_type : 'feed',
-      display_policy: typeof s.display_policy === 'string' ? s.display_policy : 'title-link',
-      default_categories: Array.isArray(s.default_categories) ? s.default_categories.map(String) : [],
-      source_weight: typeof s.source_weight === 'number' ? s.source_weight : 1,
-      feed: (s.feed as string[]).join('\n'),
-    };
-  });
+  let read: ReturnType<typeof readSourceRecords>;
+  try {
+    read = readSourceRecords(records(raw.sources), 'sample');
+  } catch (error) {
+    if (error instanceof SourceRecordError) throw new MeasureError(`sample.json: ${error.message}`);
+    throw error;
+  }
+  const sources = read.map((s): SampleSource => ({
+    id: s.id,
+    source_type: s.source_type,
+    display_policy: s.display_policy,
+    default_categories: s.default_categories,
+    source_weight: s.source_weight,
+    feed: (s.feed as string[]).join('\n'),
+  }));
   if (sources.length === 0) throw new MeasureError('sample.json: the sample has no source');
-  if (new Set(sources.map((s) => s.id)).size !== sources.length) throw new MeasureError('sample.json: a source id appears twice');
   return { sample_id: String(raw.sample_id ?? ''), window: { start, end }, max_items_per_source: max, sources };
 }
 
