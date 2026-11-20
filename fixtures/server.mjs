@@ -286,20 +286,30 @@ function redirect(request, response, url, { run, origin }, status, hops, id) {
   response.end(`fixture redirect ${status}\n`);
 }
 
-const server = http.createServer((request, response) => {
-  const url = new URL(request.url ?? '/', 'http://fixtures.local');
-  const p = { ...params(url), origin: `http://${request.headers.host ?? `localhost:${PORT}`}` };
-  let match;
+// The in-memory log of GET /requests (/requests and /health left out) and, with
+// FIXTURE_LOG_REQUESTS=1, the request line on standard output for every request.
+function logRequest(request, url) {
   if (url.pathname !== '/requests' && url.pathname !== '/health') {
     requestLog.push(url.pathname + url.search);
     if (requestLog.length > REQUEST_LOG_LIMIT) requestLog.splice(0, requestLog.length - REQUEST_LOG_LIMIT);
   }
   if (process.env.FIXTURE_LOG_REQUESTS === '1') process.stdout.write(`request ${new Date().toISOString()} ${request.method} ${url.pathname}\n`);
-  if (url.pathname === '/entities/never-request.dtd') {
-    process.stdout.write('CANARY: /entities/never-request.dtd was requested\n');
-    return send(response, 200, 'application/xml-dtd', '<!ENTITY never "never">\n');
-  }
-  if ((match = url.pathname.match(/^\/(stall|disconnect)\/body\/[A-Za-z0-9-]+$/))) {
+}
+
+const READ = ['GET', 'HEAD'];
+
+// A route of the server (priitkustala/ai-news-backend#97): its methods (a list of method names, or
+// 'ANY'), a regular expression on the path, and the handler (request, response, url, p, match) that
+// answers it, where p holds run, at and origin and match is the pattern's match on the path.
+function route(methods, pattern, handler) {
+  return { methods, pattern, handler };
+}
+
+// A story adds one route in its place in this matching order, e.g. route(READ, /^\/feeds\/slow\.xml$/, (request, response, url, p) => send(response, 200, 'application/rss+xml; charset=utf-8', arxiv(p, 1))),
+const routes = [
+  route('ANY', /^\/entities\/never-request\.dtd$/, (request, response) =>
+    send(response, 200, 'application/xml-dtd', '<!ENTITY never "never">\n')),
+  route('ANY', /^\/(stall|disconnect)\/body\/[A-Za-z0-9-]+$/, (request, response, url, p, match) => {
     response.writeHead(200, { 'Content-Type': 'application/rss+xml; charset=utf-8', 'Cache-Control': 'no-store' });
     response.write('<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel>');
     if (match[1] === 'disconnect') setTimeout(() => request.socket.destroy(), 100);
@@ -307,18 +317,15 @@ const server = http.createServer((request, response) => {
       const stall = setTimeout(() => response.end('</channel></rss>\n'), 120_000);
       response.on('close', () => clearTimeout(stall));
     }
-    return;
-  }
-  if (url.pathname === '/reddit/api/v1/access_token' && request.method === 'POST') return void redditToken(request, response);
-  if ((match = url.pathname.match(/^\/model\/([A-Za-z0-9-]{1,64})\/([A-Za-z0-9-]{1,64})\/chat\/completions$/)) && request.method === 'POST') {
+  }),
+  route(['POST'], /^\/reddit\/api\/v1\/access_token$/, (request, response) => redditToken(request, response)),
+  route(['POST'], /^\/model\/([A-Za-z0-9-]{1,64})\/([A-Za-z0-9-]{1,64})\/chat\/completions$/, (request, response, url, p, match) => {
     if (!Object.hasOwn(MODEL_REPLIES, match[1])) return send(response, 404, 'text/plain', 'no such stand-in mode\n');
-    return void modelCompletion(request, response, match[1], match[2]);
-  }
-  if ((match = url.pathname.match(/^\/model-calls\/([A-Za-z0-9-]{1,64})$/)) && request.method === 'GET') {
-    return send(response, 200, 'application/json', JSON.stringify({ calls: modelCalls.get(match[1]) ?? [] }));
-  }
-  if ((match = url.pathname.match(/^\/digest-pages\/(long|big|short|marker|missing|slow|blocked)\/([A-Za-z0-9-]{1,80})\.html$/))
-    && request.method === 'GET') {
+    return modelCompletion(request, response, match[1], match[2]);
+  }),
+  route(['GET'], /^\/model-calls\/([A-Za-z0-9-]{1,64})$/, (request, response, url, p, match) =>
+    send(response, 200, 'application/json', JSON.stringify({ calls: modelCalls.get(match[1]) ?? [] }))),
+  route(['GET'], /^\/digest-pages\/(long|big|short|marker|missing|slow|blocked)\/([A-Za-z0-9-]{1,80})\.html$/, (request, response, url, p, match) => {
     if (match[1] === 'missing') return send(response, 404, 'text/plain', 'no such fixture page\n');
     const page = digestPage(match[1] === 'slow' || match[1] === 'blocked' ? 'long' : match[1], match[2]);
     if (match[1] !== 'slow') return send(response, 200, 'text/html; charset=utf-8', page);
@@ -326,48 +333,67 @@ const server = http.createServer((request, response) => {
     response.flushHeaders();
     const late = setTimeout(() => response.end(page), 11_000);
     response.on('close', () => clearTimeout(late));
-    return;
-  }
-  if (request.method !== 'GET' && request.method !== 'HEAD') return send(response, 405, 'text/plain', 'method not allowed\n');
-  if (url.pathname === '/health') return send(response, 200, 'text/plain', 'ok\n');
-  if (url.pathname === '/requests') return send(response, 200, 'application/json', JSON.stringify({ requests: requestLog }));
-  if ((match = url.pathname.match(/^\/redirect\/(\d{3})\/([1-9])\/([A-Za-z0-9-]+)$/))) {
-    return redirect(request, response, url, p, Number(match[1]), Number(match[2]), match[3]);
-  }
-  if ((match = url.pathname.match(/^\/status\/(\d{3})\/[A-Za-z0-9-]+$/))) {
-    return send(response, Number(match[1]), 'text/plain', `fixture status ${match[1]}\n`);
-  }
-  if (url.pathname === '/feeds/arxiv.xml') {
+  }),
+  route(READ, /^\/health$/, (request, response) => send(response, 200, 'text/plain', 'ok\n')),
+  route(READ, /^\/requests$/, (request, response) => send(response, 200, 'application/json', JSON.stringify({ requests: requestLog }))),
+  route(READ, /^\/redirect\/(\d{3})\/([1-9])\/([A-Za-z0-9-]+)$/, (request, response, url, p, match) =>
+    redirect(request, response, url, p, Number(match[1]), Number(match[2]), match[3])),
+  route(READ, /^\/status\/(\d{3})\/[A-Za-z0-9-]+$/, (request, response, url, p, match) =>
+    send(response, Number(match[1]), 'text/plain', `fixture status ${match[1]}\n`)),
+  route(READ, /^\/feeds\/arxiv\.xml$/, (request, response, url, p) => {
     const count = Math.min(Math.max(Number(url.searchParams.get('count') ?? 25) || 25, 1), 200);
     return send(response, 200, 'application/rss+xml; charset=utf-8', arxiv(p, count));
-  }
-  if ((match = url.pathname.match(/^\/feeds\/([a-z0-9-]+\.xml)$/))) {
+  }),
+  route(READ, /^\/feeds\/([a-z0-9-]+\.xml)$/, (request, response, url, p, match) => {
     const file = path.join(ROOT, 'feeds', match[1]);
     if (!fs.existsSync(file)) return send(response, 404, 'text/plain', 'no such fixture feed\n');
     const body = fill(fs.readFileSync(file, 'utf8'), p);
     return send(response, 200, body.includes('<feed') ? 'application/atom+xml; charset=utf-8' : 'application/rss+xml; charset=utf-8', body);
-  }
-  if (url.pathname === '/robots.txt') return send(response, 200, 'text/plain', 'User-agent: *\nDisallow: /pages/blocked/\nDisallow: /digest-pages/blocked/\n');
-  if ((match = url.pathname.match(/^\/pages\/(?:blocked\/)?([a-z0-9-]+\.html)$/))) {
+  }),
+  route(READ, /^\/robots\.txt$/, (request, response) =>
+    send(response, 200, 'text/plain', 'User-agent: *\nDisallow: /pages/blocked/\nDisallow: /digest-pages/blocked/\n')),
+  route(READ, /^\/pages\/(?:blocked\/)?([a-z0-9-]+\.html)$/, (request, response, url, p, match) => {
     const file = path.join(ROOT, 'pages', match[1]);
     if (!fs.existsSync(file)) return send(response, 404, 'text/plain', 'no such fixture page\n');
     return send(response, 200, 'text/html; charset=utf-8', fill(fs.readFileSync(file, 'utf8'), p));
-  }
-  if (url.pathname === '/entities/xxe.txt') return send(response, 200, 'text/plain', `xxe-${p.run}`);
-  if (url.pathname.startsWith('/reddit/') && !hasBearer(request)) {
-    return send(response, 401, 'application/json', JSON.stringify({ error: 'unauthorized' }));
-  }
-  if (url.pathname === '/reddit/api/info.json') {
+  }),
+  route(READ, /^\/entities\/xxe\.txt$/, (request, response, url, p) => send(response, 200, 'text/plain', `xxe-${p.run}`)),
+  route(READ, /^\/reddit\/api\/info\.json$/, (request, response, url) => {
+    if (!hasBearer(request)) return send(response, 401, 'application/json', JSON.stringify({ error: 'unauthorized' }));
     return send(response, 200, 'application/json', redditRemoved((url.searchParams.get('id') ?? '').split(',').slice(0, 100)));
-  }
-  if ((match = url.pathname.match(/^\/reddit\/r\/([A-Za-z0-9_-]+)\/new\.json$/))) {
+  }),
+  route(READ, /^\/reddit\/r\/([A-Za-z0-9_-]+)\/new\.json$/, (request, response, url, p, match) => {
+    if (!hasBearer(request)) return send(response, 401, 'application/json', JSON.stringify({ error: 'unauthorized' }));
     return send(response, 200, 'application/json', redditListing(p, match[1], url.searchParams.get('omit')));
+  }),
+  route(READ, /^\/images\/(?:licensed|fail)\.png$/, (request, response) => send(response, 200, 'image/png', PNG)),
+  route(READ, /^\/articles\/article\.html$/, (request, response, url, p) =>
+    send(response, 200, 'text/html; charset=utf-8',
+      `<!doctype html><html><head><title>${p.run} article</title></head><body><p>${p.run}-body Synthetic publisher article text.</p></body></html>\n`)),
+  route(READ, /^\/reddit\//, (request, response) => {
+    if (!hasBearer(request)) return send(response, 401, 'application/json', JSON.stringify({ error: 'unauthorized' }));
+    return send(response, 404, 'text/plain', 'not found\n');
+  }),
+];
+
+// The first route whose methods hold the method and whose pattern matches the path, with its match.
+function findRoute(method, pathname) {
+  for (const candidate of routes) {
+    if (candidate.methods !== 'ANY' && !candidate.methods.includes(method)) continue;
+    const match = pathname.match(candidate.pattern);
+    if (match) return { route: candidate, match };
   }
-  if (url.pathname === '/images/licensed.png' || url.pathname === '/images/fail.png') return send(response, 200, 'image/png', PNG);
-  if (url.pathname === '/articles/article.html') {
-    return send(response, 200, 'text/html; charset=utf-8',
-      `<!doctype html><html><head><title>${p.run} article</title></head><body><p>${p.run}-body Synthetic publisher article text.</p></body></html>\n`);
-  }
+  return null;
+}
+
+const server = http.createServer((request, response) => {
+  const url = new URL(request.url ?? '/', 'http://fixtures.local');
+  const p = { ...params(url), origin: `http://${request.headers.host ?? `localhost:${PORT}`}` };
+  logRequest(request, url);
+  if (url.pathname === '/entities/never-request.dtd') process.stdout.write('CANARY: /entities/never-request.dtd was requested\n');
+  const found = findRoute(request.method, url.pathname);
+  if (found) return void found.route.handler(request, response, url, p, found.match);
+  if (request.method !== 'GET' && request.method !== 'HEAD') return send(response, 405, 'text/plain', 'method not allowed\n');
   return send(response, 404, 'text/plain', 'not found\n');
 });
 
