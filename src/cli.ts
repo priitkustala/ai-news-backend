@@ -3,19 +3,9 @@
 // Each subcommand prints its named output as one JSON object on the last line of standard
 // output (tests/README-testids.md, Named commands and outputs); messages go to standard error.
 import { loadLocalEnv, UsageError } from './env.js';
-import { generateKeys } from './keys.js';
-import { applyMigrations, checkMigration, migrate } from './migrate.js';
-import { seed } from './seed.js';
-import { seedSources } from './seed-sources.js';
-import { isPersona, PERSONAS, signIn } from './auth.js';
-import { ingest, isRunner, parseRunDate, RUNNERS, type Runner } from './ingest/ingest.js';
-import { scanSecrets } from './scan/scan.js';
-import { notify } from './notify/notify.js';
-import { measure } from './measure/measure.js';
-import { drawSample } from './measure/draw.js';
-import { MeasureError, sampleFolder } from './measure/sample.js';
-import { summariesApply, summariesPending } from './summaries.js';
-import { digest } from './digest/digest.js';
+import { PERSONAS } from './auth.js';
+import { MeasureError } from './measure/sample.js';
+import { COMMANDS, log } from './commands.js';
 
 const USAGE = `Usage: node dist/cli.js <command> [arguments]
 
@@ -55,9 +45,6 @@ scan-secrets exits 1 when it finds a seeded secret (the report is printed first)
 notify exits 1 when subscriptions existed and none went through (the report is printed first).
 `;
 
-const print = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`);
-const log = (line: string) => process.stderr.write(`${line}\n`);
-
 async function main(argv: string[]): Promise<void> {
   const [command, ...args] = argv;
   if (!command || command === '--help' || command === '-h' || command === 'help') {
@@ -65,121 +52,9 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
   loadLocalEnv();
-  switch (command) {
-    case 'ingest': {
-      const dryRun = args.includes('--dry-run');
-      const rest = args.filter((arg) => arg !== '--dry-run');
-      let runner: Runner = 'cloud';
-      const at = rest.indexOf('--runner');
-      if (at >= 0) {
-        const value = rest[at + 1];
-        if (!isRunner(value) || rest.indexOf('--runner', at + 1) >= 0) {
-          throw new UsageError(`ingest takes --runner once, followed by ${RUNNERS.join(' or ')}.`);
-        }
-        runner = value;
-        rest.splice(at, 2);
-      }
-      if (rest.length !== 1) throw new UsageError('ingest takes one run date, the optional --dry-run flag and the optional --runner cloud|laptop.');
-      const report = await ingest(parseRunDate(rest[0]), dryRun, log, runner);
-      print(report);
-      // A run that could not finish its own writes is a failure of the job, not of a source.
-      if (report.error) process.exitCode = 1;
-      // The run is persisted as reported, but a read for the report failed after the commit.
-      else if (report.report_error) process.exitCode = 3;
-      return;
-    }
-    case 'notify': {
-      if (args.length !== 1) throw new UsageError('notify takes one run date.');
-      const report = await notify(parseRunDate(args[0]), log);
-      print(report);
-      if (report.status === 'failed') process.exitCode = 1;
-      return;
-    }
-    case 'summaries-pending': {
-      let limit: number | undefined;
-      if (args.length === 2 && args[0] === '--limit' && /^[1-9][0-9]*$/.test(args[1]) && Number.isSafeInteger(Number(args[1]))) {
-        limit = Number(args[1]);
-      } else if (args.length !== 0) {
-        throw new UsageError('summaries-pending takes no argument or --limit N with N a positive whole number.');
-      }
-      for (const row of await summariesPending(limit)) print(row);
-      return;
-    }
-    case 'summaries-apply': {
-      if (args.length !== 0) throw new UsageError('summaries-apply takes no argument; it reads JSON lines on standard input.');
-      const chunks: Buffer[] = [];
-      for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
-      print(await summariesApply(Buffer.concat(chunks).toString('utf8'), log));
-      return;
-    }
-    case 'digest': {
-      if (args.length !== 0) throw new UsageError('digest takes no argument.');
-      // done, skipped (no key) and stopped (the model's interface failed) all exit 0.
-      print(await digest(log));
-      return;
-    }
-    case 'seed': {
-      if (args.length !== 2) throw new UsageError('seed takes a fixture set and a run marker.');
-      print(await seed(args[0], args[1]));
-      return;
-    }
-    case 'seed-sources': {
-      if (args.length !== 1) throw new UsageError('seed-sources takes one sources file.');
-      print(await seedSources(args[0]));
-      return;
-    }
-    case 'sign-in': {
-      const [persona] = args;
-      if (args.length !== 1 || !isPersona(persona)) throw new UsageError(`sign-in takes one persona: ${PERSONAS.join(' or ')}.`);
-      print({ access_token: await signIn(persona) });
-      return;
-    }
-    case 'scan-secrets': {
-      const report = scanSecrets(args, process.env, log);
-      print(report);
-      if (report.secret_matches > 0) process.exitCode = 1;
-      return;
-    }
-    case 'measure': {
-      if (args.length === 0) {
-        print(measure(log));
-        return;
-      }
-      if (args.length !== 2 || args[0] !== '--sample-dir') throw new UsageError('measure takes no argument or exactly --sample-dir <folder>.');
-      print(measure(log, sampleFolder(args[1])));
-      return;
-    }
-    case 'draw-sample': {
-      const sources = args.length === 4 && args[0] === '--sources' ? args[1] : args.length === 4 && args[2] === '--sources' ? args[3] : undefined;
-      const out = args.length === 4 && args[0] === '--out' ? args[1] : args.length === 4 && args[2] === '--out' ? args[3] : undefined;
-      if (sources === undefined || out === undefined) throw new UsageError('draw-sample takes exactly --sources <file> --out <folder>.');
-      print(await drawSample(sources, out, log));
-      return;
-    }
-    case 'keys': {
-      const result = generateKeys();
-      log(result.written.length > 0 ? `keys: wrote ${result.written.join(', ')}` : `keys: kept the existing ${result.kept.join(', ')}`);
-      print(result);
-      return;
-    }
-    case 'migrate':
-      print(await migrate());
-      return;
-    case 'apply-migrations': {
-      if (args.length > 1 || (args.length === 1 && args[0] !== '--dry-run')) throw new UsageError('apply-migrations takes no argument or --dry-run.');
-      const report = await applyMigrations({ dryRun: args.length === 1 });
-      print(report);
-      if (report.failed !== null || report.error_code !== null || report.owner_only_findings > 0) process.exitCode = 1;
-      return;
-    }
-    case 'check-migration': {
-      if (args.length !== 1) throw new UsageError('check-migration takes one SQL file.');
-      print(await checkMigration(args[0]));
-      return;
-    }
-    default:
-      throw new UsageError(`Unknown command ${command}.\n${USAGE}`);
-  }
+  const entry = COMMANDS.get(command);
+  if (!entry) throw new UsageError(`Unknown command ${command}.\n${USAGE}`);
+  await entry.run(entry.parse(args));
 }
 
 main(process.argv.slice(2)).catch((error: unknown) => {
