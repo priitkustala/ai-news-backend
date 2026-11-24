@@ -3,6 +3,8 @@
 // is stored as the item's digest, with the page bound or, for a reply written from the feed text
 // only, the feed bound (priitkustala/ai-news-backend#88). rejectReason names why a reply is refused
 // (priitkustala/ai-news#191). Pure; Node built-ins only.
+// The entity decoder lives in src/process/source-text.ts (priitkustala/ai-news#211).
+import { decodeEntities } from '../process/source-text.js';
 
 // The stored digest's bounds, in characters after trimming. A digest from the feed text only
 // (priitkustala/ai-news-backend#88) keeps the upper bound and has no lower bound.
@@ -16,16 +18,6 @@ export const ARTICLE_TEXT_MAX_CHARS = 12000;
 const DIGEST_MIN_SENTENCES = 4;
 const DIGEST_MAX_SENTENCES = 8;
 const FEED_DIGEST_MIN_SENTENCES = 1;
-
-const NAMED_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
-
-function decodeEntities(text: string): string {
-  return text.replace(/&(?:#(\d+)|#[xX]([0-9a-fA-F]+)|([a-zA-Z]+));/g, (whole, decimal?: string, hex?: string, name?: string) => {
-    if (name !== undefined) return NAMED_ENTITIES[name] ?? whole;
-    const code = decimal !== undefined ? Number.parseInt(decimal, 10) : Number.parseInt(hex ?? '', 16);
-    return Number.isInteger(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
-  });
-}
 
 // The page's text: script, style, noscript and template content and comments removed, tags
 // stripped, entities decoded, white space collapsed, trimmed, cut at ARTICLE_TEXT_MAX_CHARS.
