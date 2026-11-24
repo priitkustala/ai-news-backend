@@ -690,7 +690,63 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
     adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = fixtureFeed(ctx, 'mirror.xml'); },
     manifest: () => ({ mirror_titles: [1, 2].map((n) => `${ctx.run}-mirror-${n} synthetic announcement`) }),
   }),
+  // priitkustala/ai-news#210 (CARD-1): the two card shapes the owner saw, and a story without a digest.
+  'card-text': (ctx) => storedCardText(ctx),
 };
+
+// card-text (priitkustala/ai-news#210, Scope 3, for the frontend's scenarios): the base seed and three
+// items of the source fixture-card-text, published 10, 20 and 30 minutes ago. A: a long source summary
+// holding the entity text &#8217; four times, and a feed-only digest in three sentences ending ` [...]`
+// (row 775). B: a source summary holding a footnote mark \1\ and a run of 40 hyphens, and a shorter
+// digest in two sentences. C: no digest, a source summary in three sentences.
+function storedCardText(ctx: SeedContext): Extra {
+  const summaries = [
+    [
+      'An invented federal agency published a synthetic notice on how it will treat AI tools that help its staff sort the public comments on a proposed rule.',
+      'The agency&#8217;s notice says the tools only group comments by topic and never decide what a comment means, and that a named official reads every group.',
+      'Commenters asked how the agency&#8217;s staff would check that no comment is lost when the tools group thousands of letters that repeat the same text.',
+      'The notice answers that a sample of each group is read in full, and that the agency&#8217;s auditors compare the counts of the tools with a manual count.',
+      'A fictional trade group asked that the agency&#8217;s records of each grouping be kept for as long as the rule stays in force, so later readers can follow it.',
+    ].join(' '),
+    [
+      'A fictional standards body asked for comments on a synthetic guide to testing the AI systems that public services use.\\1\\',
+      'The guide lists checks for bias, safety and record keeping, and asks each agency to publish the results of its tests once a year.',
+      'Comments are open for sixty days. ----------------------------------------',
+    ].join(' '),
+    [
+      'An invented city library lent small AI reading helpers to its fictional members for one synthetic month.',
+      'Members said the helpers read short texts aloud and explained hard words, but often lost their place in longer books.',
+      'The library will decide in the spring whether to buy more of them.',
+    ].join(' '),
+  ];
+  const digests = [
+    [
+      'An invented federal agency set out how its staff may use AI tools to sort the public comments on a proposed rule, with a named official reading each group.',
+      'The tools only group comments by topic, and a sample of every group is read in full before the agency writes any summary of what the commenters said.',
+      'Auditors compare the counts of the tools with a manual count each month, and a fictional trade group asked that the records be kept for [...]',
+    ].join(' '),
+    [
+      'A fictional standards body proposed a synthetic guide to testing the AI systems of public services.',
+      'Each agency would test its systems for bias, safety and record keeping and publish the results once a year.',
+    ].join(' '),
+    null,
+  ];
+  const stored = source('fixture-card-text', 'Fixture card text', fixtureFeed(ctx, 'ok.xml'));
+  const categories: Category[] = ['policy', 'policy', 'other'];
+  const items = summaries.map((summary, index): ItemRow => ({
+    ...item(stored, `${ctx.run}-card-${index + 1}`, `${ctx.run}-card-${index + 1}`, categories[index], ago(ctx, (index + 1) * 10 * MINUTE), { summary }),
+    digest: digests[index],
+  }));
+  return {
+    sources: [stored],
+    items,
+    manifest: () => ({
+      ids: items.map((row) => row.id),
+      summary_lengths: summaries.map((summary) => summary.length),
+      digest_lengths: digests.map((digest) => (digest === null ? null : digest.length)),
+    }),
+  };
+}
 
 // Window items on TechCrunch AI titled `<run>-window-<n>`, one per category of the plan, an
 // hour or less apart inside the 7-day window ending at the seed time.
