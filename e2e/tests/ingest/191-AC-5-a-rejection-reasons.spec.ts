@@ -2,11 +2,16 @@
 // Each refused reply names its reason on standard error and in the report, and the summary line's
 // counts match the report; a vendor failure reads stopped (http-429); no reply text and no title is logged.
 // Given set 191-AC-5 (one item on a synthetic article page), when the job runs digest five times
-// against the stand-in model in modes len599, three, none, link and nocontent (the page path while
-// under 3 attempts, then the feed path), then the runs log invalid (length), invalid (sentences),
-// invalid (none), invalid (link) and invalid (no content), one per run, each run's report holds its
+// against the stand-in model in modes three, none, link, nocontent and none (the page path while
+// under 3 attempts, then the feed path), then the runs log invalid (sentences), invalid (none),
+// invalid (link), invalid (no content) and invalid (none), one per run, each run's report holds its
 // matching key at 1 and its summary line's counts equal the report, and after the fifth run given_up
-// is 1. Given set 191-AC-5 again, when the job runs digest in mode http429, then the status is stopped,
+// is 1. Given set 191-AC-5 again, when the job runs digest in mode len599, then the run logs invalid
+// (length) once, its report holds invalid_length 1, its summary line's counts equal the report, and
+// the item holds 5 attempts. Changed by priitkustala/ai-news#218: a reply refused for length is no
+// longer tried again on a later run (cut, asked once more or given up in the same run), so the length
+// case runs on its own item and the chain's fifth refusal is none. Given set 191-AC-5 again, when the
+// job runs digest in mode http429, then the status is stopped,
 // the reason http-429, and the last line of standard error starts with digest: stopped (http-429)
 // followed by a comma. Standard error of every run holds none of the stand-in's reply texts and not
 // the item's title.
@@ -61,11 +66,11 @@ test(
     }
     const results: DigestResult[] = [];
     const cases = [
-      { mode: 'len599', reason: 'length', key: 'invalid_length' },
       { mode: 'three', reason: 'sentences', key: 'invalid_sentences' },
       { mode: 'none', reason: 'none', key: 'invalid_none' },
       { mode: 'link', reason: 'link', key: 'invalid_link' },
       { mode: 'nocontent', reason: 'no content', key: 'invalid_no_content' },
+      { mode: 'none', reason: 'none', key: 'invalid_none' },
     ];
 
     for (const [index, { mode, reason, key }] of cases.entries()) {
@@ -89,6 +94,27 @@ test(
     expect(results[4].report?.given_up, 'the item is given up after five refusals').toBe(1);
     expect((await readRow(ids[0])).digest_attempts, 'the item holds 5 attempts').toBe(5);
 
+    // Given: the set again; When: the model answers a reply of 599 characters (priitkustala/ai-news#218)
+    const short = runMarker();
+    const shortIds = seed('191-AC-5', short).ids as string[];
+    expect(shortIds.length, 'prerequisite: the set has one item for the length case').toBe(1);
+    const shortTitle = String((await readRow(shortIds[0])).title);
+    const { mode, reason, key } = { mode: 'len599', reason: 'length', key: 'invalid_length' };
+    const result = digest({ DIGEST_API_BASE: `${fixtures}/model/${mode}/${short}-1`, DIGEST_API_KEY: 'stub-key' });
+    results.push(result);
+
+    // Then: one line names the reason, the report's key is 1, the summary line matches the report, and the item is given up
+    expect(result.exitCode, `the digest in mode ${mode} exits 0`).toBe(0);
+    const shortLines = stderrLines(result);
+    expect(shortLines.filter((line) => line === `digest: item ${shortIds[0]} invalid (${reason})`).length, `the run in mode ${mode} logs invalid (${reason}) once`).toBe(1);
+    expect(shortLines.filter((line) => / invalid \(/.test(line)).length, `the run in mode ${mode} logs one invalid line`).toBe(1);
+    expect(result.report?.[key], `the report of mode ${mode} holds ${key} 1`).toBe(1);
+    const summary = shortLines[shortLines.length - 1].match(SUMMARY);
+    expect(summary, `the run in mode ${mode} ends on the summary line`).not.toBeNull();
+    expect(summary?.[1], 'the summary line names the status').toBe(result.report?.status);
+    expect(summary?.slice(2).map(Number), 'the summary line\'s counts equal the report').toEqual(SUMMARY_KEYS.map((name) => result.report?.[name]));
+    expect((await readRow(shortIds[0])).digest_attempts, 'the item refused for length holds 5 attempts').toBe(5);
+
     // Given: the set again; When: the model's interface answers HTTP 429
     const again = runMarker();
     const againIds = seed('191-AC-5', again).ids as string[];
@@ -106,6 +132,6 @@ test(
 
     // Then: no run logs a reply text or the item's title
     const stderr = results.map((result) => result.stderr).join('\n');
-    expect([...replies, title, againTitle].filter((text) => stderr.includes(text)).length, 'standard error holds no reply text and no title').toBe(0);
+    expect([...replies, title, shortTitle, againTitle].filter((text) => stderr.includes(text)).length, 'standard error holds no reply text and no title').toBe(0);
   },
 );
