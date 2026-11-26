@@ -20,6 +20,7 @@ export async function loadSet(client: Client, set: FixtureSet, windowEnd: Date =
     await client.query('delete from public.push_subscriptions');
     await client.query('delete from public.ingestion_runs');
     await client.query('delete from public.items');
+    await client.query('delete from public.editions');
     await client.query('delete from app_private.sources');
     await client.query('delete from app_private.reddit_credentials_withheld');
     if (set.reddit_credentials_withheld) await client.query('insert into app_private.reddit_credentials_withheld default values');
@@ -43,6 +44,21 @@ export async function loadSet(client: Client, set: FixtureSet, windowEnd: Date =
           i.raw ?? null, i.post_url ?? null, i.external_url ?? null, i.author_handle ?? null,
           i.digest ?? null, i.digest ? 'model' : null, i.digest_attempts ?? 0],
       );
+    }
+    for (const e of set.editions ?? []) {
+      const edition = await client.query<{ id: string }>(
+        'insert into public.editions (edition_date, status, ticker_lines) values ($1, $2, $3) returning id',
+        [e.edition_date, e.status, e.ticker_lines],
+      );
+      for (const s of e.stories) {
+        await client.query(
+          `insert into public.edition_stories (edition_id, position, title, category, what_happened, why_it_matters, your_move,
+                                               source_name, original_url, published_on, reading_minutes)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [edition.rows[0].id, s.position, s.title, s.category, s.what_happened, s.why_it_matters, s.your_move,
+            s.source_name, s.original_url, s.published_on, s.reading_minutes],
+        );
+      }
     }
     for (const r of set.runs) {
       await client.query(
