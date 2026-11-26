@@ -8,7 +8,9 @@
 // attempts or more is sent with article_text null, and its digest is stored with the mark [...] after
 // it. A refused reply counts one attempt and its log line names the reason (rejectReason, or no
 // content); an item that reaches DIGEST_GIVE_UP_ATTEMPTS is given up, never picked again, and keeps
-// its feed summary in the app. The step has a time budget of DIGEST_TIME_BUDGET_MS (the environment
+// its feed summary in the app. A reply refused for length (priitkustala/ai-news#218) is cut after its
+// last sentence end inside 1200 characters or, too short from the page, asked once more with both
+// limits named; when nothing fits, the item is given up at once in that run. The step has a time budget of DIGEST_TIME_BUDGET_MS (the environment
 // variable of that name, a positive whole number, replaces it in tests): once it is used no item is
 // started, the run reports budget, and the next run continues. A failure of the model's interface
 // stops the run and keeps what is stored. Standard error carries counts, item ids, reasons and
@@ -16,7 +18,9 @@
 import { withClient, type Client } from '../db.js';
 import { fetchFeed, SourceFailure } from '../collect/fetch.js';
 import { robotsAllows } from '../collect/page.js';
-import { ARTICLE_MIN_CHARS, articleText, rejectReason } from './text.js';
+import {
+  ARTICLE_MIN_CHARS, DIGEST_MAX_CHARS, DIGEST_MIN_CHARS, articleText, fitReply, isTooShort, rejectReason, type RejectReason,
+} from './text.js';
 
 export const DIGEST_MAX_ATTEMPTS = 3;
 export const DIGEST_GIVE_UP_ATTEMPTS = 5;
@@ -38,6 +42,8 @@ export const DIGEST_PROMPT = [
   'Use only facts stated in the given texts; add no fact that is not in them.',
   'Write no link and no address of any kind.',
 ].join(' ');
+// The note after DIGEST_PROMPT when a reply from the page was too short (priitkustala/ai-news#218).
+const LENGTH_NOTE = `Your last answer was too short: write at least ${DIGEST_MIN_CHARS} and at most ${DIGEST_MAX_CHARS} characters in all.`;
 
 export type DigestReport = {
   status: 'done' | 'skipped' | 'stopped' | 'budget';
@@ -56,6 +62,9 @@ export type DigestReport = {
   given_up: number;
   left: number;
 };
+
+// The model's answer for an item: the digest to store, or null and the reason it is refused.
+type Answer = { reply: string; reason: null } | { reply: null; reason: RejectReason | 'no content' };
 
 type PendingItem = {
   id: string;
@@ -110,8 +119,8 @@ async function readArticle(link: string): Promise<{ text: string } | { skip: str
 }
 
 // The model's reply text, null for a 2xx answer without a string content, or a ModelStop. text is
-// null on the feed path.
-async function askModel(key: string, item: PendingItem, text: string | null): Promise<string | null> {
+// null on the feed path; note, when given, follows DIGEST_PROMPT in the system message.
+async function askModel(key: string, item: PendingItem, text: string | null, note?: string): Promise<string | null> {
   const base = process.env.DIGEST_API_BASE || DEFAULT_API_BASE;
   const user = JSON.stringify({
     title: item.title,
@@ -129,7 +138,7 @@ async function askModel(key: string, item: PendingItem, text: string | null): Pr
       body: JSON.stringify({
         model: DIGEST_MODEL,
         messages: [
-          { role: 'system', content: DIGEST_PROMPT },
+          { role: 'system', content: note === undefined ? DIGEST_PROMPT : `${DIGEST_PROMPT} ${note}` },
           { role: 'user', content: user },
         ],
         max_completion_tokens: MAX_COMPLETION_TOKENS,
@@ -154,6 +163,28 @@ async function askModel(key: string, item: PendingItem, text: string | null): Pr
   }
 }
 
+// The closest suitable match for a reply refused for length (priitkustala/ai-news#218): its fit, else,
+// for a reply too short from the page, the fit of one more reply asked with LENGTH_NOTE; null when
+// nothing fits. A ModelStop of the second ask is thrown on, as the first ask's is.
+async function closestFit(key: string, item: PendingItem, text: string | null, first: string, from: 'page' | 'feed'): Promise<string | null> {
+  const fitted = fitReply(first, from);
+  if (fitted !== null) return fitted;
+  if (!isTooShort(first, from)) return null;
+  const second = await askModel(key, item, text, LENGTH_NOTE);
+  return second === null ? null : fitReply(second, from);
+}
+
+// The model's answer for the item: the passing reply trimmed, the closest fit of a reply refused for
+// length (priitkustala/ai-news#218), or null and the reason. A ModelStop of either ask is thrown on.
+async function answer(key: string, item: PendingItem, text: string | null, from: 'page' | 'feed'): Promise<Answer> {
+  const first = await askModel(key, item, text);
+  if (first === null) return { reply: null, reason: 'no content' };
+  const reason = rejectReason(first, from);
+  if (reason === null) return { reply: first.trim(), reason: null };
+  const fitted = reason === 'length' ? await closestFit(key, item, text, first, from) : null;
+  return fitted === null ? { reply: null, reason } : { reply: fitted, reason: null };
+}
+
 // The step's time budget: the environment variable DIGEST_TIME_BUDGET_MS when it holds a positive
 // whole number (tests only), else the constant.
 function timeBudgetMs(): number {
@@ -163,6 +194,11 @@ function timeBudgetMs(): number {
 
 async function countAttempt(client: Client, id: string): Promise<void> {
   await client.query('update public.items set digest_attempts = digest_attempts + 1 where id = $1', [id]);
+}
+
+// Gives the item up at once (priitkustala/ai-news#218): no reply could be made to fit its length.
+async function giveUp(client: Client, id: string): Promise<void> {
+  await client.query('update public.items set digest_attempts = $2 where id = $1', [id, DIGEST_GIVE_UP_ATTEMPTS]);
 }
 
 // The skipped run's report: the six keys of ai-news-backend#55 only.
@@ -215,9 +251,9 @@ export async function digest(log: (line: string) => void): Promise<DigestReport 
         }
       }
       const from = text === null ? 'feed' : 'page';
-      let reply: string | null;
+      let answered: Answer;
       try {
-        reply = await askModel(key, item, text);
+        answered = await answer(key, item, text, from);
       } catch (error) {
         if (!(error instanceof ModelStop)) throw error;
         report.status = 'stopped';
@@ -225,9 +261,9 @@ export async function digest(log: (line: string) => void): Promise<DigestReport 
         log(`digest: stopped at item ${item.id} (${error.reason})`);
         break;
       }
-      const reason = reply === null ? 'no content' : rejectReason(reply, from);
-      if (reply === null || reason !== null) {
-        await countAttempt(client, item.id);
+      if (answered.reply === null) {
+        const { reason } = answered;
+        await (reason === 'length' ? giveUp(client, item.id) : countAttempt(client, item.id));
         report.invalid += 1;
         if (reason === 'none') report.invalid_none += 1;
         else if (reason === 'link') report.invalid_link += 1;
@@ -237,7 +273,7 @@ export async function digest(log: (line: string) => void): Promise<DigestReport 
         log(`digest: item ${item.id} invalid (${reason})`);
         continue;
       }
-      const checked = reply.trim();
+      const checked = answered.reply;
       await client.query(
         "update public.items set digest = $2, digest_method = 'model' where id = $1 and digest is null",
         [item.id, from === 'feed' ? `${checked} ${FEED_ONLY_MARK}` : checked],

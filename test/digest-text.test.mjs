@@ -215,3 +215,52 @@ test('AC-5: rejectReason is null for a valid page reply and a valid feed reply',
   assert.equal(t.rejectReason(feed, 'feed'), null);
   assert.equal(t.validDigest(feed, 'feed'), feed);
 });
+
+// priitkustala/ai-news#218 (AC-6): fitReply cuts a reply after its last sentence end inside 1200
+// characters and keeps it only when the cut passes rejectReason; isTooShort names a page reply under
+// 600 characters, which the digest step asks for once more.
+test('AC-6: fitReply cuts a 1201-character 5-sentence reply to its first four sentences', () => {
+  assert.equal(typeof t.fitReply, 'function', 'fitReply is an exported function');
+  const reply = sentences(5, 1201);
+  const parts = reply.split(/(?<=\.) /);
+  assert.equal(reply.length, 1201);
+  assert.equal(parts.length, 5);
+  assert.equal(t.fitReply(reply, 'page'), parts.slice(0, 4).join(' '));
+});
+
+test('AC-6: fitReply does not fit 1300 characters with no sentence end inside the first 1200', () => {
+  assert.equal(typeof t.fitReply, 'function', 'fitReply is an exported function');
+  const reply = `${words(1299)}.`;
+  assert.equal(reply.length, 1300);
+  assert.equal(t.fitReply(reply, 'page'), null);
+  assert.equal(t.fitReply(reply, 'feed'), null);
+});
+
+test('AC-6: a cut that leaves 3 sentences is not fitted on the page path and is on the feed path', () => {
+  assert.equal(typeof t.fitReply, 'function', 'fitReply is an exported function');
+  const three = sentences(3, 900);
+  const reply = `${three} ${words(399)}.`;
+  assert.equal(reply.length, 1301);
+  assert.equal(t.fitReply(reply, 'page'), null);
+  assert.equal(t.fitReply(reply, 'feed'), three);
+});
+
+test('AC-6: isTooShort is true at 599 characters on the page path only, and false at 600', () => {
+  assert.equal(typeof t.isTooShort, 'function', 'isTooShort is an exported function');
+  const short = sentences(5, 599);
+  const edge = sentences(5, 600);
+  assert.equal(short.length, 599);
+  assert.equal(edge.length, 600);
+  assert.equal(t.isTooShort(short, 'page'), true);
+  assert.equal(t.isTooShort(short, 'feed'), false);
+  assert.equal(t.isTooShort(edge, 'page'), false);
+  assert.equal(t.isTooShort(edge, 'feed'), false);
+});
+
+test('AC-6: fitReply gives a passing reply back trimmed and unchanged', () => {
+  assert.equal(typeof t.fitReply, 'function', 'fitReply is an exported function');
+  const reply = sentences(5, 820);
+  assert.equal(t.fitReply(`  ${reply}\n`, 'page'), reply);
+  const feed = sentences(2, 300);
+  assert.equal(t.fitReply(` ${feed} `, 'feed'), feed);
+});

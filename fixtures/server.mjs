@@ -28,7 +28,8 @@
 // /digest-pages/KIND/NAME.html, of which /robots.txt disallows /digest-pages/blocked/. Three modes
 // for every story of the day (priitkustala/ai-news#191): slow answers the valid reply after 1000
 // milliseconds, nocontent answers 200 in the vendor's form with content null, and http429 answers
-// 429 with the stub error body.
+// 429 with the stub error body. The mode len599thenvalid (priitkustala/ai-news#218) answers the reply
+// of len599 to the first call under a key and the valid reply to every later call under it.
 // Node 22's built-in modules only.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -95,6 +96,7 @@ const STUB_LINK = [
 const MODEL_REPLIES = {
   valid: STUB_DIGEST,
   len599: STUB_LEN_599,
+  len599thenvalid: STUB_LEN_599,
   len1201: STUB_LEN_1201,
   three: STUB_THREE_SENTENCES,
   nine: STUB_NINE_SENTENCES,
@@ -166,11 +168,12 @@ async function modelCompletion(request, response, mode, key) {
     return send(response, 429, 'application/json', JSON.stringify({ error: { message: 'stub', type: 'invalid_request_error' } }));
   }
   if (mode === 'slow') await new Promise((resolve) => setTimeout(resolve, 1000));
+  const content = mode === 'len599thenvalid' && n > 1 ? MODEL_REPLIES.valid : MODEL_REPLIES[mode];
   return send(response, 200, 'application/json', JSON.stringify({
     id: `stub-${key}-${n}`,
     object: 'chat.completion',
     model: 'gpt-6-luna',
-    choices: [{ index: 0, message: { role: 'assistant', content: MODEL_REPLIES[mode] }, finish_reason: 'stop' }],
+    choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
     usage: { prompt_tokens: 1200, completion_tokens: 210, total_tokens: 1410 },
   }));
 }
