@@ -15,6 +15,7 @@
 import { createHash } from 'node:crypto';
 import type { FeedEntry } from '../collect/parse.js';
 import { canonicalUrl } from '../process/dedupe.js';
+import { sourceText } from '../process/source-text.js';
 import { relevance, type RelevanceMethod } from '../process/relevance.js';
 import { categorise, type CategoryMethod } from '../process/category.js';
 import type { Category } from '../process/category-rules.js';
@@ -78,7 +79,7 @@ export function processEntries(source: ProcessSource, entries: FeedEntry[]): { i
       const first = kept[earlier].published_at;
       if (published_at === null || (first !== null && first <= published_at)) continue;
     }
-    const summary = source.display_policy === 'title-link' || !entry.summary ? null : cutSummary(plainText(entry.summary)) || null;
+    const summary = source.display_policy === 'title-link' || !entry.summary ? null : cutSummary(sourceText(entry.summary)) || null;
     const item: Kept = {
       id: createHash('sha256').update(url).digest('hex'),
       canonical_url: url,

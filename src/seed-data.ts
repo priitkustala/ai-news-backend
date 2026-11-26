@@ -488,6 +488,10 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   '109-AC-02a': (ctx) => summaryCase(ctx, 'short'),
   '109-AC-03a': (ctx) => summaryCase(ctx, 'nosentence'),
   '109-AC-04a': (ctx) => summaryCase(ctx, 'empty'),
+  // priitkustala/ai-news#211 rows: the source summary is stored as clean text.
+  '211-AC-1a': (ctx) => sourceMarkupCase(ctx, 'numeric'),
+  '211-AC-2a': (ctx) => sourceMarkupCase(ctx, 'marks'),
+  '211-AC-3a': (ctx) => sourceMarkupCase(ctx, 'plain'),
   '37-AC-01': (ctx) => storedSummaries(ctx),
   // priitkustala/ai-news-backend#55 rows: the article digest. Each set the command reads keeps only its own
   // items, on the synthetic article pages of the fixture server; 55-AC-08 and digests keep the base seed.
@@ -807,6 +811,18 @@ function summaryCase(ctx: SeedContext, marker: string): Extra {
     sources: [summary],
     adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = fixtureFeed(ctx, 'mirror.xml'); },
     manifest: () => ({ summary_source_id: summary.id, mirror_source_id: 'anthropic-news-mirror', case_marker: marker }),
+  };
+}
+
+// The sets of priitkustala/ai-news#211 (above): the fixture feed with source markup as the feed-summary
+// source fixture-source-markup, and the mirror shaped feed as anthropic-news-mirror (title-link, as in
+// AC-28c); `marker` is the case the row reads (numeric, which reads named too, marks, plain).
+function sourceMarkupCase(ctx: SeedContext, marker: string): Extra {
+  const markup = source('fixture-source-markup', 'Fixture feed with source markup', fixtureFeed(ctx, 'source-markup.xml'));
+  return {
+    sources: [markup],
+    adjust: (set) => { src(set, 'anthropic-news-mirror').feed_url = fixtureFeed(ctx, 'mirror.xml'); },
+    manifest: () => ({ markup_source_id: markup.id, mirror_source_id: 'anthropic-news-mirror', case_marker: marker }),
   };
 }
 

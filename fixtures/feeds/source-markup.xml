@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fixture feed with source markup (fixture)</title>
+    <link>https://markup.example.com</link>
+    <description>Synthetic fixture feed of the ai-news local test environment.</description>
+    <item><title>{{run}}-numeric Synthetic AI agency rule notice</title><link>https://markup.example.com/ai-news-fixture/{{run}}-numeric</link><description>&lt;p&gt;The agency&amp;#8217;s rule applies to AI systems.&lt;/p&gt;</description><pubDate>{{at_rfc822}}</pubDate><guid>https://markup.example.com/ai-news-fixture/{{run}}-numeric</guid></item>
+    <item><title>{{run}}-named Synthetic AI model coverage memo</title><link>https://markup.example.com/ai-news-fixture/{{run}}-named</link><description><![CDATA[<p>The agency&rsquo;s new rule covers AI models.</p>]]></description><pubDate>{{at_rfc822}}</pubDate><guid>https://markup.example.com/ai-news-fixture/{{run}}-named</guid></item>
+    <item><title>{{run}}-marks Synthetic AI hearing transcript note</title><link>https://markup.example.com/ai-news-fixture/{{run}}-marks</link><description>The committee heard testimony on AI safety in March.\1\ Members asked for a public report.
+----------------------------------------
+The report is due before the end of the year.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://markup.example.com/ai-news-fixture/{{run}}-marks</guid></item>
+    <item><title>{{run}}-plain Synthetic AI market weekly roundup</title><link>https://markup.example.com/ai-news-fixture/{{run}}-plain</link><description>An invented research group published a weekly roundup of synthetic AI market notes for readers of this fixture feed. The roundup opens with a short look at how small teams budget for model experiments across a quarter. It then compares three made-up hosting plans and explains which workloads fit each plan best. A section on evaluation describes how the group checks answers against a fixed set of invented questions. The authors say the questions change every month so that no tool can learn them by heart. Another section covers the cost of storing long documents and the trade-offs of shorter context windows. Readers are invited to send corrections, and the group promises to list every correction in the next issue. The roundup also notes that two fictional vendors cut their prices during the week. One of them added a free tier for students and researchers at public universities. The other announced a new region with lower latency for customers in the north. The next roundup will look at tools that help teams label data for training small models. It will also include a short interview with an invented engineer who maintains an open benchmark. Subscribers can reply to any issue with questions for that interview.</description><pubDate>{{at_rfc822}}</pubDate><guid>https://markup.example.com/ai-news-fixture/{{run}}-plain</guid></item>
+  </channel>
+</rss>
