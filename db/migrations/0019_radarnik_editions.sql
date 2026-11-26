@@ -15,7 +15,7 @@ set local lock_timeout = '5s';
 
 -- (1) The editions: one per date.
 create table public.editions (
-  id uuid primary key default gen_random_uuid(),
+  id uuid constraint editions_pkey primary key default gen_random_uuid(),
   edition_date date not null constraint editions_edition_date_key unique,
   status text not null constraint editions_status_check check (status in ('draft', 'approved')),
   ticker_lines text[] not null default '{}',
@@ -24,8 +24,8 @@ create table public.editions (
 
 -- (2) The stories of an edition in order; position 1 is the lead story.
 create table public.edition_stories (
-  id uuid primary key default gen_random_uuid(),
-  edition_id uuid not null references public.editions(id) on delete cascade,
+  id uuid constraint edition_stories_pkey primary key default gen_random_uuid(),
+  edition_id uuid not null constraint edition_stories_edition_id_fkey references public.editions(id) on delete cascade,
   position integer not null constraint edition_stories_position_check check (position >= 1),
   title text not null,
   category text not null
