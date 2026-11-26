@@ -74,3 +74,24 @@ export function rejectReason(reply: string, from: 'page' | 'feed' = 'page'): Rej
 export function validDigest(reply: string, from: 'page' | 'feed' = 'page'): string | null {
   return rejectReason(reply, from) === null ? reply.trim() : null;
 }
+
+// Whether a reply is too short to be a digest from the page, which the digest step asks for once
+// more (priitkustala/ai-news#218); a reply from the feed has no lower bound.
+export function isTooShort(reply: string, from: 'page' | 'feed' = 'page'): boolean {
+  return from === 'page' && Array.from(reply.trim()).length < DIGEST_MIN_CHARS;
+}
+
+// The closest fit of a reply (priitkustala/ai-news#218): the trimmed reply when it passes; else the
+// reply cut after its last sentence end inside the first DIGEST_MAX_CHARS characters, when that cut
+// passes rejectReason with the same from; else null.
+export function fitReply(reply: string, from: 'page' | 'feed' = 'page'): string | null {
+  const text = reply.trim();
+  if (rejectReason(text, from) === null) return text;
+  const chars = Array.from(text);
+  const head = chars.slice(0, DIGEST_MAX_CHARS).join('');
+  // The character after the head decides whether a full stop at its very end ends a sentence.
+  const ends = [...`${head}${chars[DIGEST_MAX_CHARS] ?? ''}`.matchAll(/[.!?](?=\s|$)/g)].filter((end) => end.index < head.length);
+  if (ends.length === 0) return null;
+  const cut = head.slice(0, ends[ends.length - 1].index + 1).trim();
+  return rejectReason(cut, from) === null ? cut : null;
+}
