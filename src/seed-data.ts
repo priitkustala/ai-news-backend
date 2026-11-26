@@ -56,10 +56,30 @@ export type ItemRow = {
 
 export type RunRow = { run_date: string; status: string; started_at: string; ended_at: string | null };
 
+// A Radarnik edition of one date and its stories in order, position 1 being the lead story (priitkustala/ai-news#213).
+export type EditionRow = {
+  edition_date: string;
+  status: 'draft' | 'approved';
+  ticker_lines: string[];
+  stories: {
+    position: number;
+    title: string;
+    category: Category;
+    what_happened: string;
+    why_it_matters: string;
+    your_move: string;
+    source_name: string;
+    original_url: string;
+    published_on: string;
+    reading_minutes: number;
+  }[];
+};
+
 export type FixtureSet = {
   sources: SourceRow[];
   items: ItemRow[];
   runs: RunRow[];
+  editions?: EditionRow[];
   manifest: Record<string, unknown>;
   // The Given "no Reddit credentials" (S-07): the seed writes the one row of
   // app_private.reddit_credentials_withheld, and the job then treats the credentials as unset.
@@ -181,6 +201,7 @@ type Extra = {
   sources?: SourceRow[];
   items?: ItemRow[];
   runs?: RunRow[];
+  editions?: EditionRow[];
   reddit_credentials_withheld?: boolean;
   // Changes to the base seed that the row's Given needs (a failing feed, older items).
   adjust?: (set: FixtureSet) => void;
@@ -283,6 +304,7 @@ export function fixtureSet(name: string, ctx: SeedContext): FixtureSet {
   set.sources.push(...(extra.sources ?? []));
   set.items.push(...(extra.items ?? []));
   set.runs.push(...(extra.runs ?? []));
+  if (extra.editions) set.editions = [...(set.editions ?? []), ...extra.editions];
   if (extra.reddit_credentials_withheld) set.reddit_credentials_withheld = true;
   extra.adjust?.(set);
   const fields = name === '40g' ? set.manifest : {};
@@ -301,6 +323,38 @@ const src = (set: FixtureSet, id: string) => set.sources.find((s) => s.id === id
 function markedItems(ctx: SeedContext, set: FixtureSet, suffixes: string[], category: Category = 'releases'): ItemRow[] {
   return suffixes.map((suffix, index) =>
     item(src(set, 'openai-news'), `${ctx.run}${suffix}`, `${ctx.run}${suffix} synthetic headline`, category, ago(ctx, (index + 1) * HOUR)));
+}
+
+// radarnik-edition (priitkustala/ai-news#213): dated by the Tallinn date of the seed time. An approved edition for
+// yesterday with two ticker lines and six stories, one per category and a second research story; an approved edition
+// for tomorrow with three stories, whose publish time (07:00 Europe/Tallinn) has not passed; a draft edition for the
+// day before yesterday with two stories. Each title starts with the run marker and names its edition.
+function radarnikEditions(ctx: SeedContext): EditionRow[] {
+  const tallinn = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Tallinn' }).format(ctx.now);
+  const day = (offset: number) => isoDate(new Date(Date.parse(`${tallinn}T00:00:00Z`) + offset * DAY));
+  const edition = (label: string, offset: number, status: EditionRow['status'], categories: Category[], tickerLines: string[]): EditionRow => ({
+    edition_date: day(offset),
+    status,
+    ticker_lines: tickerLines,
+    stories: categories.map((category, index) => ({
+      position: index + 1,
+      title: `${ctx.run} ${label} story ${index + 1}: synthetic ${category} headline`,
+      category,
+      what_happened: `Synthetic account of what happened in ${label} story ${index + 1}.`,
+      why_it_matters: `Synthetic reason why ${label} story ${index + 1} matters.`,
+      your_move: `Synthetic next step after ${label} story ${index + 1}.`,
+      source_name: 'Fixture Edition Source',
+      original_url: `https://edition.example.test/${ctx.run}/${label}-${index + 1}`,
+      published_on: day(offset - (index % 2)),
+      reading_minutes: 1 + (index % 4),
+    })),
+  });
+  return [
+    edition('yesterday', -1, 'approved', ['releases', 'research', 'policy', 'business', 'other', 'research'],
+      [`${ctx.run} synthetic ticker line 1`, `${ctx.run} synthetic ticker line 2`]),
+    edition('tomorrow', 1, 'approved', ['releases', 'research', 'policy'], [`${ctx.run} synthetic ticker line of tomorrow`]),
+    edition('draft', -2, 'draft', ['business', 'other'], []),
+  ];
 }
 
 const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra> = {
@@ -692,6 +746,8 @@ const FIXTURE_SETS: Record<string, (ctx: SeedContext, set: FixtureSet) => Extra>
   }),
   // priitkustala/ai-news#210 (CARD-1): the two card shapes the owner saw, and a story without a digest.
   'card-text': (ctx) => storedCardText(ctx),
+  // priitkustala/ai-news#213 (ED-1): one dated Radarnik edition a day, shown from 07:00 Tallinn time.
+  'radarnik-edition': (ctx) => ({ editions: radarnikEditions(ctx) }),
 };
 
 // card-text (priitkustala/ai-news#210, Scope 3, for the frontend's scenarios): the base seed and three
